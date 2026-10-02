@@ -1,0 +1,39 @@
+# Challenge Me — minimal security baseline .gitignore
+# Stack-agnostic on purpose: no application stack has been selected (see CLAUDE.md §7).
+# Framework-specific rules are added only after a stack ADR exists in docs/architecture/adr/.
+# Secret handling: AGENTS.md §9. Never commit secrets; never rely on this file alone.
+
+# --- Environment / secrets ---
+.env
+.env.*
+!.env.example
+
+# --- Key material ---
+*.pem
+*.key
+*.p12
+*.pfx
+id_rsa*
+id_ed25519*
+
+# --- Dependencies / build output ---
+node_modules/
+dist/
+build/
+coverage/
+
+# --- Caches / temporary ---
+.cache/
+.tmp/
+temp/
+
+# --- Editors / IDE ---
+.vscode/
+.idea/
+
+# --- OS artifacts ---
+.DS_Store
+Thumbs.db
+
+# --- Logs ---
+*.log
