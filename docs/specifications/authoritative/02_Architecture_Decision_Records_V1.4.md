@@ -4,6 +4,18 @@
 >
 > FROZEN 2026-09-30 as ADR set V1.4 (reconciled, freeze revision: includes U1, U2, US-1 and the DI-2 wording alignment in ADR-011). Changes require formal change control.
 >
+> Change-control revision V1.4.1 (2026-10-03): CR-1 applied by engineering-authority decision — ADR-012 amendment "SystemActor purposes [CR-1]" (seven purposes; five-purpose base wording superseded; purpose-specific least-privilege permission sets; permission matrix outstanding as CR-1-F1). No other text changed. Recorded in the Reconciliation Report change-control register (§7) and errata register (§6.4).
+>
+> Change-control revision V1.4.2 (2026-10-03): CR-2 applied by engineering-authority decision — ADR-012 amendment "Payload-store object keys [CR-2]" (Domain Model §22 key `{tenant_id}/{store}/{entity_id}/{uuid}` authoritative; ADR-012 "Caches and storage" object-key wording superseded; rest of that paragraph unchanged). No other text changed. Recorded in the Reconciliation Report §7 and §6.4.
+>
+> Change-control revision V1.4.3 (2026-10-03): CR-3 applied by engineering-authority decision — ADR-012 amendment "Resolver ownership [CR-3]" and ADR-013 amendment "Resolver exception and IdP adapter ownership [CR-3]" (Foundation owns `cm_resolver` and the six X1 resolver functions as a closed, explicit exception to module-schema isolation; `identity.resolver_audit` remains Identity-owned; Identity & Access owns the `AuthProvider` port and the concrete staff IdP adapter). No other text changed. Recorded in the Reconciliation Report §7.
+>
+> Change-control revision V1.4.4 (2026-10-04): CR-3-F1 Decision 2b applied by engineering-authority decision — ADR-012 amendment "Delivery resolver signature [CR-3-F1 2b]" (`resolve_delivery_by_provider_message(provider, provider_account_ref, provider_message_id)`; the two-input signature of Domain Model X1 is superseded). No other text changed. Recorded in the Reconciliation Report §7 and §6.4.
+>
+> Change-control revision V1.4.5 (2026-10-04): CR-5 applied by engineering-authority decision — ADR-012 amendment "Trusted provider identifiers [CR-5]" and ADR-024 amendment "Webhook-verification credentials [CR-5]" (webhook-verification credentials are platform-held secrets with provider-neutral granularity; account-specific credentials bind the verified `provider_account_ref`; a webhook-supplied provider identifier is a lookup key, never a tenant assertion). No other text changed. Recorded in the Reconciliation Report §7.
+>
+> Change-control revision V1.4.6 (2026-10-04): CR-3-F1 applied by engineering-authority decision — ADR-012 amendment "Resolver privileges, schema and audit boundary [CR-3-F1]" and ADR-013 amendment "Foundation schema [CR-3-F1]" (the six X1 resolver functions are held in schema `foundation`; `cm_resolver` privileges; EXECUTE for `cm_app` only; audit append to `identity.resolver_audit`; read columns in Domain Model §6.4). No other text changed; no passage superseded. Recorded in the Reconciliation Report §7.
+>
 > Principle: Build the product. Buy/integrate the infrastructure. Own the domain.
 >
 > Companion documents: Commercial V1.3 Implementation Architecture; V1.3 Architecture Review Remediation Report.
@@ -65,8 +77,8 @@ This set keeps every V1.2 decision and changes it only where the V1.2 architectu
 | ADR-008 | FD-1, W3-3, W3-4, W3-C1, W3-C2, W3-C4 |
 | ADR-009 | DM X9, X12; W5-1, W7-1, W7-C3, W7 CX-4, W11 PE-7 |
 | ADR-011 | DM X3, X8; FD-1, W6-1, W6-3, W6-4, W6-C5, W6 HD-4, W6 DI, W6 RG-6, W9-C1 |
-| ADR-012 | DM X1, X7; W1 F-1, F-5; FD-4 |
-| ADR-013 | DM X4, X13; SC3, W2-C4, W6-6, W10 |
+| ADR-012 | DM X1, X7; W1 F-1, F-5; FD-4; CR-1 (V1.4.1); CR-2 (V1.4.2); CR-3 (V1.4.3); CR-3-F1 2b (V1.4.4); CR-5 (V1.4.5); CR-3-F1 (V1.4.6) |
+| ADR-013 | DM X4, X13; SC3, W2-C4, W6-6, W10; CR-3 (V1.4.3); CR-3-F1 (V1.4.6) |
 | ADR-014 | SC4, W4-1, W4-C5, W4-C6, W8-1, W8-C2, W8-C3, W10-C3 |
 | ADR-015 | DM X2 (and Rule 9), W6-2, W6-C1, W6-C2, W6-C4 |
 | ADR-016 | SC1, SC2, W2-2, W2-C3, W2-C4, W4-4, W4-5, W4-C2, W4-C7, W5-C2 |
@@ -77,7 +89,7 @@ This set keeps every V1.2 decision and changes it only where the V1.2 architectu
 | ADR-021 | W11-1…W11-5, W11-C1, W11-C3, W11-C4, W11-C6, W11-C7; U1 and U2 (closed by product-owner decision) |
 | ADR-022 | G5, W4-2, W4-3, W4-4, Wave 4 S-5 |
 | ADR-023 | W1 F-2, W1 J-6, W11 OP-1…OP-4; gate 11; LG-10 |
-| ADR-024 | FD-1, FD-4, W11 SB-10 |
+| ADR-024 | FD-1, FD-4, W11 SB-10; CR-5 (V1.4.5) |
 | ADR-025 | W7-5; gate 10 |
 | Cross-ADR Rules | DM X2 (Rule 9), DM X8 (Rule 2), J-6, W11-C7 |
 
@@ -465,6 +477,12 @@ Cross-tenant suite (every endpoint called as organization B with organization A 
 - **Resolver role (DM X1):** `cm_resolver` (NOLOGIN, BYPASSRLS) owns a closed, audited set of SECURITY DEFINER resolver functions returning identifiers only (staff memberships, capability token and session, invitation, inbound channel, delivery by provider message). The table registry has five categories: tenant-owned, reference, global identity, operational, platform.
 - **Platform organization (DM X7):** a reserved platform organization owns platform AI operations, usage and gate runs; shared channel accounts and cross-tenant suppression (HMAC only) live in platform tables.
 - Platform-level audit events are recorded under the platform organization [W1 F-1]; break-glass access is visible in the affected organization's audit log [FD-4]; a rejected elevated-access request is recorded as REVOKED with reason REJECTED [W1 F-5].
+- **SystemActor purposes [CR-1]:** the authoritative purpose set is SCHEDULER, WEBHOOK, WORKER, PROJECTION, REGRADE, IDENTITY, PURGE (Domain Model §5.3; Wave 1 §2). The five-purpose wording in "Tenant context" above is superseded. SystemActor authorization is purpose-specific and least-privilege: each purpose has an explicit permission set, separate from the staff-role permission matrix in Domain Model §5.4, and a SystemActor may exercise only permissions registered for its declared purpose and applicable tenant scope. The exact SystemActor permission matrix is not yet defined; it must be added as an explicit authoritative authorization contract before SystemActor authorization is implemented (open follow-up item CR-1-F1).
+- **Payload-store object keys [CR-2]:** the authoritative payload-store key contract is `{tenant_id}/{store}/{entity_id}/{uuid}` (Domain Model §22). The object-key wording `{tenant_id}/{entity_type}/{random_uuid}` in "Caches and storage" above is superseded. The remainder of that paragraph is unchanged and in force: signed URLs only after authorization, at most 5 minutes for downloads and 15 minutes for uploads; uploads validated before an entity may reference them; no public buckets.
+- **Resolver ownership [CR-3]:** Foundation (the Phase 1 platform layer; not one of the fourteen modules) owns the `cm_resolver` role, the six resolver functions defined by DM X1 (`resolve_staff_memberships`, `resolve_capability_token`, `resolve_capability_session`, `resolve_invitation`, `resolve_inbound_channel`, `resolve_delivery_by_provider_message`), the resolver infrastructure, and the corresponding architecture/boundary tests. Foundation receives no general access to the Identity or Communication schemas: only these six functions may perform the cross-module reads X1 requires. `identity.resolver_audit` remains owned by Identity & Access; resolver functions append their audit records only through the audit boundary described in Domain Model §6.4. No table permission, grant or schema privilege beyond DM X1 and §6.4 is established by this amendment.
+- **Delivery resolver signature [CR-3-F1 2b]:** the delivery resolver is `resolve_delivery_by_provider_message(provider, provider_account_ref, provider_message_id)` and returns `tenant_id` or not found (Domain Model §3 X1, paragraph "Delivery resolver signature [CR-3-F1 2b]"). The two-input signature `(provider, provider_message_id)` is superseded; the added `provider_account_ref` aligns the resolver with the delivery uniqueness key `(channel_account_ref, provider_message_id)` (Domain Model §14.1, §23). The set of six resolver functions, their ownership and the closed exception [CR-3] are unchanged.
+- **Trusted provider identifiers [CR-5]:** a webhook-supplied value is a trusted provider identifier ("Webhooks" above; ADR-004) only when the webhook's provider signature has been verified. It must identify a provider-side object. It is used only as a lookup key into Challenge Me-owned mappings through the X1 resolver functions, never as a tenant assertion; the tenant is whatever the mapping returns. A field that names a Challenge Me organization, tenant or other Challenge Me identifier is a payload field and never sets the tenant. The credential rule and the binding rule for account-specific credentials are in the ADR-024 amendment "Webhook-verification credentials [CR-5]".
+- **Resolver privileges, schema and audit boundary [CR-3-F1]:** the six X1 resolver functions are SECURITY DEFINER PostgreSQL functions owned by `cm_resolver` and held in the schema `foundation`; they are not placed in `identity` or `comms`. `cm_resolver` holds USAGE on the `identity` and `comms` schemas solely to support these functions, and no CREATE privilege on either; column-level SELECT only on the resolver source columns listed in Domain Model §6.4, paragraph "Resolver contracts, privileges, schema and audit boundary [CR-3-F1]"; and INSERT only on `identity.resolver_audit`, with no UPDATE and no DELETE. Only `cm_app` holds EXECUTE on the six functions; PUBLIC and all other roles do not. `cm_app` has no INSERT privilege on `identity.resolver_audit`. No other role receives any privilege by virtue of the X1 resolver functions; the rights in the role table (Domain Model §6.4) are otherwise unchanged. Each function appends its audit record within the resolver call through the Identity-defined audit append boundary; `identity.resolver_audit` remains Identity-owned and its column definition is not finalized by this amendment. The closed exception [CR-3] is unchanged and gives Foundation no general access to the Identity or Communication schemas.
 
 # ADR-013 — Module Ownership & Inter-Module Communication
 
@@ -517,6 +535,8 @@ Only Challenge and Reporting create delivery intents. Learning never does. Revie
 
 - **Review decisions (DM X4):** decisions are commands to the owning module, which calls `Review.CompleteTask` in the same transaction (mechanism A); `ReviewResolved` is informational.
 - **Delivery ownership (DM X13):** producers emit `DeliveryRequested`; Communication creates and owns the Delivery; no DeliveryIntent is owned by Challenge or Reporting.
+- **Resolver exception and IdP adapter ownership [CR-3]:** the six DM X1 resolver functions, owned by Foundation (ADR-012 amendment [CR-3]; Domain Model §6.4), are a closed, explicit exception to "each module's data access touches only its schema". The exception covers those six named functions only; it is not generalized and is not a mechanism for any other cross-module query. Identity & Access owns Identity-domain behavior, ActorContext construction, the `AuthProvider` provider port and the concrete staff IdP adapter; the listing of the staff IdP adapter under Phase 1 in Implementation Architecture §35 is a delivery-phase assignment, not a module-ownership declaration.
+- **Foundation schema [CR-3-F1]:** the schema `foundation` holds only the six DM X1 resolver functions (ADR-012 amendment [CR-3-F1]; Domain Model §6.4). It is not a module schema, holds no tables and is not a general-purpose shared schema. "One PostgreSQL schema per module" is otherwise unchanged.
 - Challenge may call `Roster.ResolveLearners(pseudonyms)` for reinforcement planning only [SC3].
 - Review tasks for a submission route by the assignment's cohort; that cohort's teachers keep review, override and dispute rights for those submissions after the learner leaves [W6-6].
 - Roster events `GuardianLinkEnded` and `LearnerMinorStatusChanged` [W2-C4]; `LearnerDeleted` / `GuardianDeleted` [W10].
@@ -817,6 +837,7 @@ Alerts use SLO burn rates, plus AI spend against forecast and any P0 dead letter
 ## V1.4 reconciliation amendments
 
 - **Privileged approvals:** a regrade approver is never the requester, regardless of organization size [FD-1]; break-glass requires a second platform operator [FD-4, W11 OP-5]; organization termination requires a second operator (PROPOSED DEFAULT, W11 SB-10).
+- **Webhook-verification credentials [CR-5]:** Webhook-verification credentials are platform-held secrets, managed outside tenant-scoped domain data and accessible only through the Communication provider-adapter boundary. A provider may use one credential or multiple credentials at the integration/account granularity it requires; credential references and credential selection must remain platform-level and must not require tenant resolution. When a provider uses account-specific verification credentials, the verified `provider_account_ref` must correspond to the account bound to the credential that successfully verified the webhook. These credentials are platform secrets under "Secrets" above; the rule that per-tenant provider credentials are decrypted only in the worker does not apply to them.
 
 # ADR-025 — Safeguarding Signals
 

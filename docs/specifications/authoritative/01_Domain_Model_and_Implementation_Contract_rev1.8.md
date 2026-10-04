@@ -6,6 +6,14 @@
 >
 > FROZEN 2026-09-30 as part of the V1 implementation contract (Reconciliation Report rev. 3). Changes require formal change control.
 >
+> Change-control revision 1.8.1 (2026-10-03): CR-3 applied by engineering-authority decision — §6.4 paragraph "Ownership and boundary [CR-3]" (Foundation owns `cm_resolver` and the six X1 resolver functions as a closed, explicit exception to module-schema isolation; `identity.resolver_audit` remains Identity-owned; Identity & Access owns the `AuthProvider` port and the concrete staff IdP adapter). No other text changed. Recorded in the Reconciliation Report §7.
+>
+> Change-control revision 1.8.2 (2026-10-04): CR-3-F1 Decision 2b applied by engineering-authority decision — §3 X1 paragraph "Delivery resolver signature [CR-3-F1 2b]" (`resolve_delivery_by_provider_message(provider, provider_account_ref, provider_message_id)`; the two-input signature in the X1 correction is superseded). No other text changed. Recorded in the Reconciliation Report §7 and §6.4.
+>
+> Change-control revision 1.8.3 (2026-10-04): CR-5 applied by engineering-authority decision — §14.1 paragraph "Webhook inbox account reference [CR-5]", §14.3 paragraph "Account reference at ingestion [CR-5]" and §14.4 sentence "[CR-5]" (`provider_account_ref` established at webhook ingestion after signature verification and replay-window validation and carried on `comms.webhook_inbox`; verification and normalization behind the Communication provider-adapter boundary). The data classification of the new column is OPEN. No other text changed. Recorded in the Reconciliation Report §7.
+>
+> Change-control revision 1.8.4 (2026-10-04): CR-3-F1 applied by engineering-authority decision — §6.4 paragraph "Resolver contracts, privileges, schema and audit boundary [CR-3-F1]" (the six X1 resolver functions are held in schema `foundation`; per-function sources, read columns, predicates and returns; `cm_resolver` privileges; EXECUTE for `cm_app` only; audit append to `identity.resolver_audit`) and §14.1 paragraph "Delivery account reference [CR-3-F1]". No other text changed; no passage superseded. Recorded in the Reconciliation Report §7.
+>
 > Revision 1.8 (Product-owner clarification US-1; freeze-audit corrections: §5.4 billing.view row aligned to Wave 11 §2, §17 direction values aligned to LTM, §24 dispute guard aligned to W6 DI-2, §32 X1/X2 status): the usage statement reports the number of ACTIVE learners at the end of the statement period; reporting only; U2 enforcement unchanged. §18, §21, §35.
 >
 > Revision 1.7 (Product-owner decisions closing U1 and U2): `overrun_pct` default 0% [U1]; `max_learners` counts ACTIVE learners, point-in-time at learner creation or reactivation [U2]. §18, §31, §32, §34, §35. No other change.
@@ -65,6 +73,8 @@ No P0 contradictions were found. Implementation can continue under the correctio
 **Impact.** Phase 1 identity cannot be built as specified; engineers would bypass RLS ad hoc.
 **Correction.** (1) Add role `cm_resolver` (NOLOGIN, BYPASSRLS) that owns a closed set of SECURITY DEFINER **resolver functions**, each returning only identifiers needed to establish context: `resolve_staff_memberships(user_id)`, `resolve_capability_token(token_hash)`, `resolve_capability_session(session_hash)`, `resolve_invitation(token_hash)`, `resolve_inbound_channel(provider, provider_account_ref)`, `resolve_delivery_by_provider_message(provider, provider_message_id)`. Every call is audited. (2) Extend the ADR-012 table registry from two categories to five (Section 6.3): tenant-owned, reference, global identity, operational, platform.
 **Continue without resolving?** No for Phase 1 identity; yes for everything else. ADR amendment: ADR-012.
+
+**Delivery resolver signature [CR-3-F1 2b].** The signature of the delivery resolver is `resolve_delivery_by_provider_message(provider, provider_account_ref, provider_message_id)`; it returns `tenant_id` or not found. The two-input signature `resolve_delivery_by_provider_message(provider, provider_message_id)` in the Correction above is superseded. The added `provider_account_ref` aligns the resolver with the delivery uniqueness key `(channel_account_ref, provider_message_id)` (Section 14.1; Section 23). The other five signatures, the closed set of six functions and every other statement of X1 are unchanged.
 
 ### X2 [P1] Correctness authority vs semantic short-text evaluation
 
@@ -533,6 +543,27 @@ CI test: every table appears in exactly one category; TENANT tables have `tenant
 | cm_resolver | NOLOGIN | BYPASSRLS; owns resolver functions; SELECT on the few columns they read (X1) |
 
 Each resolver returns identifiers only, validates input shape, is rate-limited by its caller, and writes an audit record via a SECURITY DEFINER insert into `identity.resolver_audit` (OPERATIONAL, hashed inputs).
+
+**Ownership and boundary [CR-3].** Foundation (the Phase 1 platform layer; not one of the fourteen modules) owns the `cm_resolver` role, the six resolver functions defined by X1 — `resolve_staff_memberships`, `resolve_capability_token`, `resolve_capability_session`, `resolve_invitation`, `resolve_inbound_channel`, `resolve_delivery_by_provider_message` — the resolver infrastructure, and the corresponding architecture/boundary tests. These six functions are a closed, explicit exception to the module-schema isolation rule (X15; ADR-013 "Enforcement"): only they may perform the cross-module reads that X1 requires. The exception gives Foundation no general access to the Identity or Communication schemas and is not a mechanism for any other cross-module query. `identity.resolver_audit` remains owned by Identity & Access; the resolver functions append their audit records only through the SECURITY DEFINER insert described above. No table permission, grant or schema privilege beyond what X1 and this section state is established. Identity & Access owns Identity-domain behavior, ActorContext construction, the `AuthProvider` provider port and the concrete staff IdP adapter; the listing of the staff IdP adapter under Phase 1 in Implementation Architecture §35 is a delivery-phase assignment, not a module-ownership declaration.
+
+**Resolver contracts, privileges, schema and audit boundary [CR-3-F1].** The six X1 resolver functions are SECURITY DEFINER PostgreSQL functions owned by `cm_resolver` and held in the schema `foundation`: `foundation.resolve_staff_memberships`, `foundation.resolve_capability_token`, `foundation.resolve_capability_session`, `foundation.resolve_invitation`, `foundation.resolve_inbound_channel`, `foundation.resolve_delivery_by_provider_message`. The schema `foundation` holds only these six functions; it is not a module schema, holds no tables and is not a general-purpose shared schema. The functions are not placed in `identity` or `comms`. Each function reads only the columns listed here:
+
+| Resolver | Source | Reads | Predicate | Returns |
+|---|---|---|---|---|
+| `resolve_staff_memberships(user_id)` | `identity.membership` | `user_id`, `status`, `tenant_id` | `user_id` = input; `status` = ACTIVE | set of `tenant_id` (empty set: no active membership) |
+| `resolve_capability_token(token_hash)` | `identity.capability_grant` | `token_hash`, `tenant_id`, `id` | `token_hash` = input | `(tenant_id, grant_id)` or not found; `grant_id` is `id` |
+| `resolve_capability_session(session_hash)` | `identity.capability_session` | `session_hash`, `tenant_id` | `session_hash` = input | `tenant_id` or not found |
+| `resolve_invitation(token_hash)` | `identity.staff_invitation` | `token_hash`, `tenant_id` | `token_hash` = input | `tenant_id` or not found |
+| `resolve_inbound_channel(provider, provider_account_ref)` | dedicated account: `comms.channel_account`; shared account: `comms.shared_channel_account` and `comms.channel_account_assignment` | `comms.channel_account`: `provider`, `provider_account_ref`, `id`, `tenant_id`; `comms.shared_channel_account`: `provider`, `provider_account_ref`, `id`; `comms.channel_account_assignment`: `shared_channel_account_id`, `tenant_id` | `provider`, `provider_account_ref` = inputs | candidate set of `tenant_id`: the tenant of a dedicated account, or the tenants assigned to a shared account |
+| `resolve_delivery_by_provider_message(provider, provider_account_ref, provider_message_id)` | the account tables above; `comms.delivery` | accounts: `provider`, `provider_account_ref`, `id`; `comms.delivery`: `channel_account_ref`, `provider_message_id`, `tenant_id` | account by `provider`, `provider_account_ref`; delivery by `channel_account_ref`, `provider_message_id` | `tenant_id` or not found |
+
+No row identifier other than those listed is returned unless an authoritative consumer later requires it. Status, expiry and revocation are not resolver predicates, with the single exception of `identity.membership.status` = ACTIVE; they are validated by the owning module's tenant-scoped workflow after resolution (for capability tokens, Section 25.9). Skipping TERMINATED organizations at staff sign-in is performed by the calling Identity workflow; the resolver performs no Tenancy read. `resolve_inbound_channel` does not read Roster, perform ContactPoint matching, decide Communication matching policy, validate tenant lifecycle or business status, or perform consent, opt-out or suppression behavior; sender and contact matching remain in the Communication-owned, tenant-scoped workflow.
+
+*Privileges.* `cm_resolver` holds USAGE on the `identity` and `comms` schemas solely to support these six functions, and no CREATE privilege on either; column-level SELECT only on the columns listed above; and INSERT only on `identity.resolver_audit`, with no UPDATE and no DELETE. Only `cm_app` holds EXECUTE on the six functions; PUBLIC and all other roles do not. `cm_app` has no INSERT privilege on `identity.resolver_audit`. No other role receives any privilege by virtue of the X1 resolver functions; the rights in the role table are otherwise unchanged.
+
+*Audit.* Each function appends its audit record within the resolver call, through the Identity-defined audit append boundary. `identity.resolver_audit` remains owned by Identity & Access, and its column definition remains an Identity concern that is not finalized here. The resolver passes only the information the audit contract requires, including the resolver identity and the hashed resolver inputs.
+
+*Boundary.* The closed exception [CR-3] is unchanged. Foundation may access only the source columns listed above, through these six functions. This authorizes no general Identity or Communication read, cross-module ORM import, shared repository, cross-module query helper, arbitrary raw SQL, cross-schema join outside the resolver functions, or general access to the `identity` or `comms` schemas.
 
 ## 6.5 Worker tenant flow
 
@@ -1556,6 +1587,10 @@ comms.inbound_message                  TENANT · R5 · S3
   OPT_IN, REPLY, UNKNOWN), body_ref, received_at
 ```
 
+**Webhook inbox account reference [CR-5].** `comms.webhook_inbox` carries `provider_account_ref`, established at ingestion after successful signature verification and replay-window validation (Section 14.3). The data classification of this column is OPEN: it is not decided here and is to be set by Privacy through the classification register (Section 6.3 is unchanged). Implementation of the persisted column is blocked until that classification is recorded.
+
+**Delivery account reference [CR-3-F1].** `comms.delivery.channel_account_ref` references the account row used for the delivery, which may be either `comms.channel_account.id` or `comms.shared_channel_account.id`.
+
 **Cancellation (added state).** CANCELLED is added to the approved delivery states for consent withdrawal and source cancellation before sending; it is terminal and never reached after SENT. LOCKED (W4-C3; the states list in Arch §17 omits it).
 
 ## 14.2 Delivery state machine
@@ -1595,6 +1630,8 @@ Worker ProcessWebhookEvent (SystemActor WEBHOOK):
   mark inbox PROCESSED
 ```
 
+**Account reference at ingestion [CR-5].** The order of work is: verify signature → replay-window validation → establish `provider_account_ref` → persist it on `webhook_inbox` → `ProcessWebhookEvent(inbox_id)` → resolver. The worker takes `provider` and `provider_account_ref` from the inbox row and does not derive them again from the payload. `tenant_id` on the inbox row stays unset until resolution. The job payload remains `inbox_id`. Trusted-identifier and credential rules: ADR-012 and ADR-024 amendments [CR-5].
+
 Unknown event types are stored and ignored (ADR-024).
 
 ## 14.4 Contracts
@@ -1607,7 +1644,7 @@ Consumes `DeliveryRequested{purpose, source_ref, learner_id?, guardian_id?, cont
 
 Offers: `SendOtp(contact_point, code_ref)`, `GetDeliveryStatus(source_ref)`. Emits: `DeliveryFailed` (producer decides fallback), `DeliveryDelivered` (informational), `ChannelOptOutReceived`.
 
-**Provider boundary:** `WhatsAppProvider`, `EmailProvider`, `SmsProvider` (interface retained; inactive in V1 [W4-5]) behind `ChannelProvider.send(message) → {provider_message_id} | failure(class)`. Template approval sync through the provider adapter.
+**Provider boundary:** `WhatsAppProvider`, `EmailProvider`, `SmsProvider` (interface retained; inactive in V1 [W4-5]) behind `ChannelProvider.send(message) → {provider_message_id} | failure(class)`. Template approval sync through the provider adapter. **[CR-5]** Webhook signature verification and normalization, including establishing `provider_account_ref`, occur behind the Communication provider-adapter boundary.
 
 # 15. AI Platform
 
