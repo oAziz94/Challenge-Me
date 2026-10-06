@@ -27,6 +27,10 @@ coverage/
 .tmp/
 temp/
 
+# --- Local tool state (per-user; must not be committed) ---
+.claude/settings.local.json
+gitleaks-report*.json
+
 # --- Editors / IDE ---
 .vscode/
 .idea/
