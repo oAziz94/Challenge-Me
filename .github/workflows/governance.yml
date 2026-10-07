@@ -1,0 +1,139 @@
+# Foundation Task 1 — governance checks (STACK-ADR-002 §6.3, §6.4, §6.5, §6.8, §6.9).
+# This file is a protection-mechanism file: a change to it is a self-modifying change (STACK-ADR-002 §6.3).
+# CI output is not authoritative evidence for such a change; the human reading of the diff is.
+#
+# Design constraints (STACK-ADR-002 §6.4–§6.7):
+#   - no external-action step at all (the owner-only Actions policy stays unchanged); tools are downloaded by hash;
+#   - ordinary `pull_request` / `push` triggers only; no privileged trigger;
+#   - `permissions: {}` (no token scope); no repository secret is referenced;
+#   - the repository is fetched anonymously (it is public), so no credential is needed or persisted.
+name: governance
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+env:
+  # Node 24 is the Phase 1 runtime baseline (STACK-ADR-001). Linux x64 tarball, SHA-256 from nodejs.org SHASUMS256.txt.
+  NODE_VERSION: v24.21.0
+  NODE_SHA256: 6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+  # gitleaks 8.30.1 Linux x64 (scripts/governance/README.md); SHA-256 equals the project's published checksums file.
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+
+jobs:
+  commit-identity:
+    # Pull requests only: a merge performed by GitHub is committed by GitHub, not by oAziz94 (STACK-ADR-002 §6.9
+    # rejects a *pull request* containing a non-conforming commit).
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Fetch pull request history
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head" "$BASE_SHA"
+          test "$(git rev-parse refs/remotes/pr/head)" = "$HEAD_SHA"
+          git checkout -q --detach "$HEAD_SHA"
+      - name: Install Node.js (pinned by SHA-256)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/node.tar.gz" "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.gz"
+          echo "${NODE_SHA256}  $RUNNER_TEMP/node.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/node-${NODE_VERSION}-linux-x64/bin" >> "$GITHUB_PATH"
+      - name: Commit identity
+        run: |
+          node --version
+          node scripts/governance/check-commit-identity.mjs "${BASE_SHA}..${HEAD_SHA}"
+
+  authoritative-path:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+    steps:
+      - name: Fetch pull request history
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --no-tags origin "+refs/pull/${PR_NUMBER}/head:refs/remotes/pr/head" "$BASE_SHA"
+          test "$(git rev-parse refs/remotes/pr/head)" = "$HEAD_SHA"
+          git checkout -q --detach "$HEAD_SHA"
+      - name: Install Node.js (pinned by SHA-256)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/node.tar.gz" "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.gz"
+          echo "${NODE_SHA256}  $RUNNER_TEMP/node.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/node-${NODE_VERSION}-linux-x64/bin" >> "$GITHUB_PATH"
+      - name: Authoritative-path governance
+        run: |
+          node --version
+          node scripts/governance/check-authoritative-path.mjs "$BASE_SHA" "$HEAD_SHA"
+
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the published refs and the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          # The gate's coverage (`rev-list --all`, refs/codex/** tips, unreachable objects) is only as wide as what is
+          # fetched here, so fetch every published history ref: all branches, all tags, and refs/codex/**.
+          # Not fetched: refs/pull/** and any other synthetic or hosting-internal ref (not publication history).
+          git fetch -q --no-tags origin \
+            "+refs/heads/*:refs/remotes/origin/*" \
+            "+refs/tags/*:refs/tags/*" \
+            "+refs/codex/*:refs/codex/*"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            # The PR head may exist only in the pull request (fork). It is fetched into FETCH_HEAD only (no ref is
+            # created); checking it out below makes it HEAD, which `rev-list --all` and the tree scan then cover.
+            git fetch -q --no-tags origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          fi
+          # Push event: the pushed SHA must lie inside the fetched refs, otherwise this fails and nothing is scanned.
+          git cat-file -e "${TARGET_SHA}^{commit}"
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js (pinned by SHA-256)
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/node.tar.gz" "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.gz"
+          echo "${NODE_SHA256}  $RUNNER_TEMP/node.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/node.tar.gz" -C "$RUNNER_TEMP"
+          echo "$RUNNER_TEMP/node-${NODE_VERSION}-linux-x64/bin" >> "$GITHUB_PATH"
+      - name: Install gitleaks (pinned by SHA-256)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/gitleaks"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/gitleaks.tar.gz" "https://github.com/gitleaks/gitleaks/releases/download/v${GITLEAKS_VERSION}/gitleaks_${GITLEAKS_VERSION}_linux_x64.tar.gz"
+          echo "${GITLEAKS_SHA256}  $RUNNER_TEMP/gitleaks.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/gitleaks.tar.gz" -C "$RUNNER_TEMP/gitleaks" gitleaks
+      - name: Secret scan (canary, tree, history, complete blob coverage)
+        run: |
+          node --version
+          "$RUNNER_TEMP/gitleaks/gitleaks" version
+          node scripts/governance/scanner-gate.mjs "$RUNNER_TEMP/gitleaks/gitleaks" "$GITHUB_WORKSPACE"
