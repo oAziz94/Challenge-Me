@@ -73,10 +73,17 @@ node scripts/governance/scanner-gate.mjs <path-to-gitleaks> --canary-only       
    every one, exit 1, never print or write a canary value (`--redact`), scan every commit it was given, and exit 0 for a clean control.
    The temporary files are deleted afterwards. A scanner that returns CLEAN for the canary fails the gate and no real result is trusted.
 2. Current working tree: exit 0, "no leaks found", and a non-zero number of bytes scanned.
-3. Full commit history (`gitleaks git --log-opts=--all`): exit 0 and the scanner's "N commits scanned" equals `git rev-list --all --count`.
-   This guards the truncated or zero-commit walk, but it proves nothing about content: `git log -p` based scans skip `-diff` and binary
-   files. It also counts only commits that add content, so a history with an empty or deletion-only commit fails closed here and needs a
-   human review; the gate never relaxes this on its own.
+3. Full commit history (`gitleaks git --log-opts=--all`): exit 0, "no leaks found", and the scanner's single anchored "N commits scanned" line
+   EQUALS the expected count derived from Git alone: the number of non-merge commits whose `git log --numstat` (the scanner's own `git log -p`
+   defaults) shows at least one added text line. Equality with `git rev-list --all --count` cannot hold for legitimate history: gitleaks 8.30.1
+   (pinned) reports exactly the non-merge commits that add a line, so empty, deletion-only, mode-only, pure-rename, binary-only and merge
+   commits are never counted (characterized against the real scanner for empty, deletion-only, clean-merge and conflict-resolved-merge
+   history, each followed by an ordinary commit). Any other count, higher or lower, a missing or ambiguous summary, or an unparseable Git
+   answer fails; the total commit count (`rev-list --all --count`) is only a sanity condition (greater than 0, not below the expected count).
+   This check is separate from the repository-identity and invocation controls and does not by itself prove which repository was scanned.
+   The canary repository keeps exact equality with its commit count (two plain content commits). A change of the pinned version requires
+   re-characterizing the rule. This still proves nothing about content: `git log -p` based scans skip `-diff` and binary files, which the
+   blob stage covers.
 4. Complete blob coverage: every blob is enumerated from Git object data, with SHA-1 object ids only (anything unparseable or of another id shape
    fails closed): `git rev-list --all --objects` (all history), `refs/codex/**` tips (`for-each-ref`, `ls-tree -r -z`) and unreachable blobs
    (`git fsck --unreachable --no-reflogs`). Object types are verified with `cat-file --batch-check`; the union is deduplicated, with per-source

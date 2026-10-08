@@ -12,7 +12,9 @@
 //   3. every reachable blob (history, refs/codex/** tree refs, unreachable) is enumerated from Git object data,
 //      materialized by object id into a temporary directory and scanned in directory mode, with coverage and the
 //      EXACT scanned byte count verified against sizes computed independently of the scanner;
-//   4. the commit-history scan is kept, with an exact commit-count cross-check;
+//   4. the commit-history scan is kept, with a fail-closed cross-check of the scanner's "N commits scanned" against
+//      count derived independently from Git (see `expectedHistoryCommits`); equality with `rev-list --all --count` cannot
+//      hold for legitimate history (empty, deletion-only and merge commits are never counted by the scanner);
 //   5. every temporary location is outside the repository and removed afterwards.
 // Nothing here prints a secret value. The scanner and Git access are injected, so the gate is testable with fakes.
 import { randomInt } from 'node:crypto';
@@ -229,6 +231,57 @@ export function verifyScanner({ run, version = PINNED_VERSION, env = process.env
     rmSync(root, { recursive: true, force: true });
   }
   return { ok: checks.every((c) => c.ok), checks };
+}
+
+// ---------------------------------------------------------------------------------------------
+// History scan: the exact expected "N commits scanned"
+//
+// `gitleaks git` walks `git log -p`. Characterized with the pinned gitleaks 8.30.1: the reported N equals the number of
+// NON-MERGE commits that ADD at least one text line. Empty commits, deletion-only commits, mode-only or pure-rename
+// commits, binary-only (or `-diff`) commits and merge commits are never counted, so N < `git rev-list --all --count` for
+// legitimate history and equality with that count cannot be required. The gate instead derives, from Git alone:
+//   expected = non-merge commits whose `git log --numstat` (same defaults as the scanner's own `git log -p`, no extra
+//              rename or copy options) shows at least one added text line;
+//   total    = every commit reachable from any ref (`rev-list --all --count`), a sanity condition only
+//              (total > 0 and expected <= total);
+// and requires N, parsed from exactly one anchored summary line, to EQUAL `expected`. Because the scanner is pinned, a
+// different count (higher or lower) contradicts the characterized behaviour and fails. A missing, ambiguous or unparseable
+// summary fails. This count check is separate from the repository-identity and invocation controls; it does not by
+// itself prove which repository was scanned. A change of the pinned version requires re-characterizing this rule.
+
+/**
+ * Counts commits with at least one added text line in `git log --numstat --format=@@<sha>` output (no merges).
+ * Anything that is not a commit header, a blank line or a numstat record throws (fail closed).
+ */
+export function countCommitsWithAddedText(text) {
+  let commits = 0;
+  let current = false;
+  let counted = false;
+  for (const line of text.split('\n')) {
+    if (line === '') continue;
+    if (/^@@[0-9a-f]{40}$/.test(line)) {
+      current = true;
+      counted = false;
+      continue;
+    }
+    const m = /^(\d+|-)\t(\d+|-)\t.+$/.exec(line);
+    if (!current || !m) throw new Error('unparseable git log --numstat output');
+    if (m[1] !== '-' && Number(m[1]) > 0 && !counted) {
+      counted = true;
+      commits += 1;
+    }
+  }
+  return commits;
+}
+
+/** The independently derived expected scanner count and the total commit count described above, from Git only. */
+export function expectedHistoryCommits(git) {
+  const raw = git(['rev-list', '--all', '--count']).trim();
+  if (!/^\d+$/.test(raw)) throw new Error('unparseable commit count');
+  const total = Number(raw);
+  const expected = countCommitsWithAddedText(git(['log', '--all', '--no-merges', '--numstat', '--format=@@%H']));
+  if (expected > total) throw new Error('inconsistent commit counts');
+  return { expected, total };
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -455,13 +508,15 @@ export function runPrepublicationGate({ run, repo, version = PINNED_VERSION, git
     });
 
     stage('history', () => {
-      const raw = git(['rev-list', '--all', '--count']).trim();
-      if (!/^\d+$/.test(raw)) throw new Error('unparseable commit count');
-      const commits = Number(raw);
+      const { expected, total } = expectedHistoryCommits(git);
       const h = run(['git', '--log-opts=--all', repo, ...owned.args, ...rep(join(root, 'hist.json'))]);
       const reported = parseCommitsScanned(h.out);
       add('history: no leaks, exit 0', h.code === 0 && saysNoLeaks(h.out), `exit ${h.code}`);
-      add('history: scanned every commit', reported === commits && commits > 0, `expected ${commits}, scanner reported ${reported}`);
+      add(
+        'history: scanner commit count equals the independently derived expected count',
+        total > 0 && reported !== null && reported === expected,
+        `expected ${expected}, total ${total}, scanner reported ${reported}`,
+      );
     });
 
     stage('blob coverage', () => {

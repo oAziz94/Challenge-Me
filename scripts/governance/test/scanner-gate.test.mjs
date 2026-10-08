@@ -11,9 +11,11 @@ import {
   GATE_CONFIG,
   PINNED_VERSION,
   assertOutside,
+  countCommitsWithAddedText,
   defaultGit,
   gateEnv,
   generateCanaries,
+  expectedHistoryCommits,
   makeOwned,
   makeScannerRunner,
   parseBatch,
@@ -51,6 +53,21 @@ function walk(dir, base = dir, out = []) {
   return out;
 }
 
+/** Non-merge commits with at least one added line, counted from `git log -p` (the rule observed for gitleaks 8.30.1). */
+function addingCommits(dir) {
+  const out = execFileSync('git', ['log', '--all', '--no-merges', '-p', '-U0', '--format=@@%H'], { cwd: dir, encoding: 'utf8', maxBuffer: 1 << 28 });
+  let n = 0;
+  let counted = false;
+  for (const line of out.split('\n')) {
+    if (/^@@[0-9a-f]{40}$/.test(line)) counted = false;
+    else if (!counted && line.startsWith('+') && !line.startsWith('+++')) {
+      counted = true;
+      n += 1;
+    }
+  }
+  return n;
+}
+
 /**
  * A fake scanner that behaves like a working one (detects canary file names and planted tokens, exits 1 on findings,
  * redacts, reports honest commit and byte counts), with switches that break exactly one property.
@@ -78,9 +95,14 @@ function fakeScanner(o = {}) {
     if (mode === 'dir' && !isBlobs && !path.includes('canary') && !path.includes('clean') && o.treeBytes !== undefined) bytes = o.treeBytes;
     const lines = [];
     if (mode === 'git') {
-      const real = Number(execFileSync('git', ['rev-list', '--all', '--count'], { cwd: path, encoding: 'utf8' }).trim());
       const isCanary = path.includes('canary');
-      lines.push(`INF ${isCanary ? real : (o.commits ?? real)} commits scanned.`);
+      // Canary history is two plain content commits: the scanner reports every commit. Real history: like gitleaks 8.30.1,
+      // only NON-MERGE commits that add at least one line are counted (independent of the gate's own numstat logic).
+      const real = isCanary
+        ? Number(execFileSync('git', ['rev-list', '--all', '--count'], { cwd: path, encoding: 'utf8' }).trim())
+        : addingCommits(path);
+      if (!isCanary && o.commitLines) lines.push(...o.commitLines);
+      else lines.push(`INF ${isCanary ? real : (o.commits ?? real)} commits scanned.`);
     }
     lines.push(`INF scanned ~${bytes} bytes (x) in 1ms`);
     lines.push(findings.length ? `WRN leaks found: ${findings.length}` : 'INF no leaks found');
@@ -322,14 +344,152 @@ test('S-2: expected bytes greater or smaller than the scanner-reported bytes fai
   });
 });
 
-test('S-2: a history scan that reports 0 commits, or a wrong count, fails', () => {
+const HISTORY_CHECK = 'history: scanner commit count equals the independently derived expected count';
+
+test('S-2: a history scan that reports 0 commits, too few, or more than exist fails', () => {
   withCleanRepo((repo) => {
-    for (const commits of [0, 1, 4, 99]) {
+    // three commits that each add content: expected count 3, total 3
+    for (const commits of [0, 1, 2, 4, 99]) {
       const r = runPrepublicationGate({ run: fakeScanner({ commits }).run, repo: repo.dir });
       assert.equal(r.ok, false, `commits ${commits}`);
-      assert.ok(failed(r).includes('history: scanned every commit'));
+      assert.ok(failed(r).includes(HISTORY_CHECK));
+    }
+    const ok = runPrepublicationGate({ run: fakeScanner().run, repo: repo.dir });
+    assert.equal(ok.ok, true);
+    assert.match(byName(ok, /^history: scanner commit count/).detail, /expected 3, total 3, scanner reported 3/);
+  });
+});
+
+test('S-2: missing, ambiguous or unusable history evidence fails closed', () => {
+  withCleanRepo((repo) => {
+    const cases = {
+      'no summary line at all': [],
+      'two different summary lines': ['INF 3 commits scanned.', 'INF 2 commits scanned.'],
+      'summary not anchored to a whole line': ['WRN seen 3 commits scanned. here'],
+      'summary with trailing text': ['INF 3 commits scanned. and more'],
+      'zero commits (the silent no-op report) for a repository with content': ['INF 0 commits scanned.'],
+    };
+    for (const [label, commitLines] of Object.entries(cases)) {
+      const r = runPrepublicationGate({ run: fakeScanner({ commitLines }).run, repo: repo.dir });
+      assert.equal(r.ok, false, label);
+      assert.ok(failed(r).includes(HISTORY_CHECK), label);
     }
   });
+});
+
+test('S-2: a scanner that scanned a different (smaller) repository than the requested one fails', () => {
+  withCleanRepo((repo) => {
+    const r = runPrepublicationGate({ run: fakeScanner({ commits: 1 }).run, repo: repo.dir });
+    assert.equal(r.ok, false);
+    assert.match(byName(r, /^history: scanner commit count/).detail, /expected 3, total 3, scanner reported 1/);
+  });
+});
+
+// ---------------------------------------------------------------------------------------------
+// History shapes for which exact equality with `git rev-list --all --count` is impossible (gitleaks never counts empty,
+// deletion-only or merge commits), each followed by an ordinary content commit
+
+const ignoreExit = (fn) => {
+  try {
+    fn();
+  } catch {
+    /* a conflicting merge exits non-zero by design */
+  }
+};
+const SHAPES = {
+  'empty commit': (r) => r.commitFiles({}, 'empty'),
+  'deletion-only commit': (r) => r.commitFiles({ 'b.txt': null }, 'delete b'),
+  'clean two-parent merge': (r) => {
+    r.git(['checkout', '-q', '-b', 'side']);
+    r.commitFiles({ 's.txt': 'side\n' }, 'side work');
+    r.git(['checkout', '-q', 'main']);
+    r.commitFiles({ 'm.txt': 'main\n' }, 'main work');
+    r.git(['merge', '-q', '--no-ff', '-m', 'merge side', 'side']);
+  },
+  'merge with conflict-resolution content': (r) => {
+    r.commitFiles({ 'c.txt': 'base\n' }, 'c base');
+    r.git(['checkout', '-q', '-b', 'side']);
+    r.commitFiles({ 'c.txt': 'side\n' }, 'c side');
+    r.git(['checkout', '-q', 'main']);
+    r.commitFiles({ 'c.txt': 'main\n' }, 'c main');
+    ignoreExit(() => r.git(['merge', '-q', '--no-ff', 'side']));
+    r.commitFiles({ 'c.txt': 'resolved\n' }, 'merge with resolution');
+  },
+};
+function shapedRepo(shape) {
+  const repo = makeRepo();
+  repo.commitFiles({ 'a.txt': 'alpha\n', 'b.txt': 'bravo\n' }, 'one');
+  repo.commitFiles({ 'd.txt': 'delta\n' }, 'two');
+  SHAPES[shape](repo);
+  repo.commitFiles({ 'later.txt': 'later content\n' }, 'ordinary commit after the shape');
+  return repo;
+}
+const counts = (r) => /expected (\d+), total (\d+), scanner reported (\d+)/.exec(byName(r, /^history: scanner commit count/).detail).slice(1).map(Number);
+
+for (const shape of Object.keys(SHAPES)) {
+  test(`history shape (${shape}, then an ordinary commit): the gate passes although the scanner count is below the commit count`, () => {
+    const repo = shapedRepo(shape);
+    try {
+      const r = runPrepublicationGate({ run: fakeScanner().run, repo: repo.dir });
+      assert.deepEqual(failed(r), []);
+      const [expected, total, reported] = counts(r);
+      assert.ok(reported < total, `equality with the commit count would have rejected this history (${reported} vs ${total})`);
+      assert.equal(reported, expected);
+      const zero = runPrepublicationGate({ run: fakeScanner({ commits: 0 }).run, repo: repo.dir });
+      assert.ok(failed(zero).includes(HISTORY_CHECK), 'a scanner that scanned nothing still fails');
+      const few = runPrepublicationGate({ run: fakeScanner({ commits: expected - 1 }).run, repo: repo.dir });
+      assert.ok(failed(few).includes(HISTORY_CHECK), 'one commit fewer than expected still fails');
+      // expected < expected + 1 <= total: a value inside the old range, below the total commit count, must still fail
+      assert.ok(expected + 1 <= total);
+      const plusOne = runPrepublicationGate({ run: fakeScanner({ commits: expected + 1 }).run, repo: repo.dir });
+      assert.ok(failed(plusOne).includes(HISTORY_CHECK), 'one commit more than expected fails although it does not exceed the total');
+      const many = runPrepublicationGate({ run: fakeScanner({ commits: total + 1 }).run, repo: repo.dir });
+      assert.ok(failed(many).includes(HISTORY_CHECK), 'more commits than exist still fails');
+    } finally {
+      repo.cleanup();
+    }
+  });
+}
+
+test('history shape: a repository whose every commit is empty has expected count 0, and the scanner must still report a summary', () => {
+  const repo = makeRepo();
+  repo.commitFiles({}, 'empty one');
+  repo.commitFiles({}, 'empty two');
+  try {
+    const ok = runPrepublicationGate({ run: fakeScanner().run, repo: repo.dir });
+    assert.ok(!failed(ok).includes(HISTORY_CHECK), 'an all-empty history is accepted by the history check (the empty tree is rejected by the separate tree check)');
+    assert.deepEqual(counts(ok), [0, 2, 0]);
+    const silent = runPrepublicationGate({ run: fakeScanner({ commitLines: [] }).run, repo: repo.dir });
+    assert.ok(failed(silent).includes(HISTORY_CHECK), 'no summary line fails');
+    const tooMany = runPrepublicationGate({ run: fakeScanner({ commits: 3 }).run, repo: repo.dir });
+    assert.ok(failed(tooMany).includes(HISTORY_CHECK));
+    const plusOne = runPrepublicationGate({ run: fakeScanner({ commits: 1 }).run, repo: repo.dir });
+    assert.ok(failed(plusOne).includes(HISTORY_CHECK), 'expected 0, total 2: a count of 1 fails although it is below the total');
+  } finally {
+    repo.cleanup();
+  }
+});
+
+test('history expectation: renames, binary and deletion-only commits are not counted; one per commit, not per file', () => {
+  const h = (n) => `@@${String(n).repeat(40)}`;
+  assert.equal(countCommitsWithAddedText(''), 0);
+  assert.equal(countCommitsWithAddedText(`${h(1)}\n\n${h(2)}\n`), 0, 'empty commits');
+  assert.equal(countCommitsWithAddedText(`${h(1)}\n\n0\t3\tb.txt\n`), 0, 'deletion only');
+  assert.equal(countCommitsWithAddedText(`${h(1)}\n\n-\t-\tx.bin\n`), 0, 'binary only');
+  assert.equal(countCommitsWithAddedText(`${h(1)}\n\n0\t0\told.txt => new.txt\n`), 0, 'pure rename');
+  assert.equal(countCommitsWithAddedText(`${h(1)}\n\n2\t1\ta.txt\n4\t0\tb.txt\n${h(2)}\n\n1\t0\tc.txt\n`), 2, 'one per commit');
+  assert.equal(countCommitsWithAddedText(`${h(1)}\n\n-\t-\tx.bin\n1\t0\ty.txt\n`), 1, 'mixed commit');
+});
+
+test('history expectation: unparseable git log output fails closed', () => {
+  const h = `@@${'a'.repeat(40)}`;
+  for (const bad of ['2\t1\ta.txt\n', `${h}\nnot a record\n`, `${h}\n1\t1\n`, `${h}\n1 2 a.txt\n`, `@@${'a'.repeat(64)}\n`, `${h}\n\n+1\t0\ta.txt\n`]) {
+    assert.throws(() => countCommitsWithAddedText(bad), /unparseable/, JSON.stringify(bad));
+  }
+  // a path that imitates a commit header cannot create one: records start with digits or '-', then a tab
+  assert.equal(countCommitsWithAddedText(`${h}\n\n0\t1\t@@${'b'.repeat(40)}\n`), 0);
+  assert.throws(() => expectedHistoryCommits(() => 'x'), /unparseable commit count/);
+  assert.throws(() => expectedHistoryCommits((a) => (a[0] === 'rev-list' ? '1\n' : `${h}\n1\t0\ta\n@@${'c'.repeat(40)}\n1\t0\tb\n`)), /inconsistent/);
 });
 
 test('S-2: a current-tree scan that reports 0 bytes fails', () => {
@@ -416,6 +576,9 @@ test('S-2: a Git command that fails or returns unparseable data fails closed, fo
     };
     const cases = [
       ['rev-list --count fails', (a) => a[0] === 'rev-list' && a.includes('--count'), failing],
+      ['log --numstat fails', (a) => a[0] === 'log', failing],
+      ['log --numstat unparseable', (a) => a[0] === 'log', () => 'garbage\n'],
+      ['log --numstat returns an orphan numstat record', (a) => a[0] === 'log', () => '1\t1\ta.txt\n'],
       ['rev-list --objects fails', (a) => a[0] === 'rev-list' && a.includes('--objects'), failing],
       ['cat-file --batch-check fails', (a) => a[0] === 'cat-file' && a[1] === '--batch-check', failing],
       ['cat-file --batch fails', (a) => a[0] === 'cat-file' && a[1] === '--batch', failing],
@@ -435,7 +598,7 @@ test('S-2: a Git command that fails or returns unparseable data fails closed, fo
     for (const [label, match, effect] of cases) {
       const r = runPrepublicationGate({ run: fakeScanner().run, repo: repo.dir, git: wrap(match, effect) });
       assert.equal(r.ok, false, label);
-      assert.ok(failed(r).some((n) => /fail closed|every commit|no \.gitleaksignore/.test(n)), label);
+      assert.ok(failed(r).some((n) => /fail closed|independently derived expected count|no \.gitleaksignore/.test(n)), label);
     }
   });
 });
@@ -576,7 +739,7 @@ test('S-2 real: a -diff file in a mixed commit, later deleted, is a clean histor
     const gate = runPrepublicationGate({ run: realRun(), repo: repo.dir });
     assert.equal(gate.ok, false);
     assert.ok(!failed(gate).includes('history: no leaks, exit 0'), 'the git-log based history scan misses it (the reproduced gap)');
-    assert.ok(!failed(gate).includes('history: scanned every commit'), 'and the commit count matches');
+    assert.ok(!failed(gate).includes(HISTORY_CHECK), 'and the commit count equals the expected count');
     assert.ok(failed(gate).includes('blob scan: no leaks, exit 0'), 'complete blob materialization detects it');
     assert.doesNotMatch(JSON.stringify(gate), new RegExp(token.slice(0, 16)));
   } finally {
@@ -820,10 +983,69 @@ test('F-2 real: ambient Git redirection cannot make the real gate scan another r
     const env = { GIT_DIR: join(other.dir, '.git'), GIT_WORK_TREE: other.dir, GIT_REPLACE_REF_BASE: 'refs/hidden/' };
     const gate = runPrepublicationGate({ run: realRun(env), repo: repo.dir, env: { ...process.env, ...env } });
     assert.deepEqual(failed(gate), []);
-    assert.match(byName(gate, /^history: scanned every commit/).detail, /expected 3, scanner reported 3/);
+    assert.match(byName(gate, /^history: scanner commit count/).detail, /expected 3, total 3, scanner reported 3/);
   } finally {
     repo.cleanup();
     other.cleanup();
+  }
+});
+
+for (const shape of Object.keys(SHAPES)) {
+  test(`history shape real (${shape}, then an ordinary commit): the real gate passes where exact count equality failed`, (t) => {
+    if (skipUnlessReal(t)) return;
+    const repo = shapedRepo(shape);
+    try {
+      const gate = runPrepublicationGate({ run: realRun(), repo: repo.dir });
+      assert.deepEqual(failed(gate), []);
+      const [expected, total, reported] = counts(gate);
+      assert.ok(reported < total, `the old equality would have failed: scanner ${reported}, rev-list ${total}`);
+      assert.equal(reported, expected, 'gitleaks 8.30.1 counts exactly the non-merge commits that add a line');
+    } finally {
+      repo.cleanup();
+    }
+  });
+}
+
+test('history shape real: an all-empty history reports 0 commits and the history check accepts it; a secret added after an uncounted commit is still found', (t) => {
+  if (skipUnlessReal(t)) return;
+  const empty = makeRepo();
+  empty.commitFiles({}, 'empty one');
+  empty.commitFiles({}, 'empty two');
+  const planted = shapedRepo('deletion-only commit');
+  try {
+    const gate = runPrepublicationGate({ run: realRun(), repo: empty.dir });
+    assert.ok(!failed(gate).includes(HISTORY_CHECK), 'an all-empty history is accepted by the history check (the empty tree is rejected by the separate tree check)');
+    assert.deepEqual(counts(gate), [0, 2, 0]);
+    planted.commitFiles({ 'leak.txt': `token = "${plantedToken()}"\n` }, 'plant after the shape');
+    const bad = runPrepublicationGate({ run: realRun(), repo: planted.dir });
+    assert.ok(failed(bad).includes('history: no leaks, exit 0'), 'the history scan still detects content added after an uncounted commit');
+    assert.ok(!failed(bad).includes(HISTORY_CHECK));
+  } finally {
+    empty.cleanup();
+    planted.cleanup();
+  }
+});
+
+test('history shape real: a real scanner whose history summary is zeroed, removed, ambiguous or inflated (the #2129 failure mode) fails closed', (t) => {
+  if (skipUnlessReal(t)) return;
+  const repo = shapedRepo('clean two-parent merge');
+  try {
+    const tamper = (rewrite) => (args, opts) => {
+      const r = realRun()(args, opts);
+      return args[0] === 'git' && args[2] === repo.dir ? { ...r, out: rewrite(r.out) } : r;
+    };
+    const variants = {
+      zeroed: (o) => o.replace(/INF \d+ commits scanned\./, 'INF 0 commits scanned.'),
+      removed: (o) => o.replace(/^.*commits scanned\..*$/m, ''),
+      ambiguous: (o) => `${o}\nINF 1 commits scanned.`,
+      inflated: (o) => o.replace(/INF \d+ commits scanned\./, 'INF 99 commits scanned.'),
+    };
+    for (const [label, rewrite] of Object.entries(variants)) {
+      const gate = runPrepublicationGate({ run: tamper(rewrite), repo: repo.dir });
+      assert.ok(failed(gate).includes(HISTORY_CHECK), label);
+    }
+  } finally {
+    repo.cleanup();
   }
 });
 
@@ -926,7 +1148,7 @@ test('R-2 real: lowercase Git variables and a redirected config file cannot redi
     const env = { ...process.env, git_dir: join(other.dir, '.git'), git_work_tree: other.dir, GIT_CONFIG_GLOBAL: cfg, GIT_CONFIG_SYSTEM: cfg };
     const cli = spawnSync(process.execPath, [GATE_CLI, REAL, repo.dir], { encoding: 'utf8', env });
     assert.equal(cli.status, 0, cli.stdout + cli.stderr);
-    assert.match(cli.stdout, /history: scanned every commit {2}\(expected 3, scanner reported 3\)/);
+    assert.match(cli.stdout, /history: scanner commit count equals the independently derived expected count {2}\(expected 3, total 3, scanner reported 3\)/);
   } finally {
     repo.cleanup();
     other.cleanup();
