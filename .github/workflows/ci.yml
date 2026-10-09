@@ -6,8 +6,8 @@
 # The gate-catalogue job fails when a catalogued gate or its job disappears, when a workflow breaks the policy
 # (no privileged trigger, permissions {}, no write permission, no secret, no unpinned action or image), and when a
 # "pending" gate is not backed by an accepted, still-open prerequisite. Gates that cannot be implemented yet
-# (migration verification, pooled-connection leak, the FB section 14 catalogue rows) have NO job here on purpose:
-# they are pending in the catalogue and are listed as PENDING, never reported as passed.
+# (pooled-connection leak, previous-release upgrade verification, the FB section 14 catalogue rows) have NO job here on purpose:
+# they are pending in the catalogue (or, for the upgrade path, not yet representable) and are never reported as passed.
 #
 # No third-party action is used. Node.js and the scanner are downloaded and verified against pinned SHA-256 values;
 # pnpm comes from corepack and is verified against the hash in package.json; images are pinned by digest.
@@ -263,9 +263,152 @@ jobs:
           test "$(git rev-parse HEAD)" = "$TARGET_SHA"
       - name: PostgreSQL 18 service container is reachable and is major 18
         run: bash scripts/governance/ci-gates/postgres-probe.sh
-      # No application integration test exists yet. The Vitest "integration" project is defined and the real-roles and
-      # migration steps are PENDING gates in the catalogue (integration-real-roles, migration-verification); they are not run
-      # here and are not reported as passed.
+      # The Vitest "integration" project runs in the migration-verification, integration-real-roles and
+      # table-category-registry-vs-rls jobs below (Foundation task 3); this job only proves the PostgreSQL 18 service container.
+
+  migration-verification:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      # The tests use this job-local PostgreSQL 18 service container (trust authentication on the job-local network, no credential)
+      # instead of starting a Testcontainers container; the harness asserts that the server major is 18. The roles the tests create
+      # get random passwords generated inside the test run.
+      CM_TEST_POSTGRES: external
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+    services:
+      postgres:
+        image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      # Fresh database: bootstrap (roles, schema migration), migrate as cm_migrator, migrate again (no-op), integrity, static-rule, lock and redaction tests. Previous-release upgrade verification (STACK-ADR-001 4.4 A.6) is NOT run here: it applies once a first release exists and has no catalogue representation yet.
+      - name: Migration runner and fresh-database migration verification
+        run: corepack pnpm run test:migration
+      # Reviewer-visible schema output (STACK-ADR-003 section 10; STACK-ADR-001 4.4 A.8): after verification succeeds, a fresh review database is
+      # migrated with the real command (twice; the second run must be a no-op) and a schema-only dump and a roles-only dump (no role
+      # password hashes) are printed to this log and to the job summary, using the PostgreSQL 18 tools of the service container. No artifact
+      # is uploaded and no action is used.
+      - name: Schema-only dump and roles/grants for reviewers (job log and job summary)
+        run: bash scripts/governance/ci-gates/schema-review-dump.sh
+
+  integration-real-roles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      # The tests use this job-local PostgreSQL 18 service container (trust authentication on the job-local network, no credential)
+      # instead of starting a Testcontainers container; the harness asserts that the server major is 18. The roles the tests create
+      # get random passwords generated inside the test run.
+      CM_TEST_POSTGRES: external
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+    services:
+      postgres:
+        image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      # Connects as the real roles and asserts roles, schemas, the STACK-ADR-003 grant matrix and the closed contents of schema migration against the catalogues. cm_resolver is intentionally absent (CR-7 item 5).
+      - name: Real roles, schemas, grants and closed schema contents
+        run: corepack pnpm run test:database
+
+  table-category-registry-vs-rls:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      # The tests use this job-local PostgreSQL 18 service container (trust authentication on the job-local network, no credential)
+      # instead of starting a Testcontainers container; the harness asserts that the server major is 18. The roles the tests create
+      # get random passwords generated inside the test run.
+      CM_TEST_POSTGRES: external
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+    services:
+      postgres:
+        image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      # Registry gate (every table in exactly one category; TENANT tables carry tenant_id and forced tenant_isolation RLS), the RLS template, and the no-cross-schema-FK assertion.
+      - name: Table-category registry, RLS template and cross-schema foreign keys
+        run: corepack pnpm run test:registry
 
   dependency-scan:
     runs-on: ubuntu-latest

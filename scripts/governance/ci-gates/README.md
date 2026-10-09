@@ -28,8 +28,8 @@ human reading of the actual diff, not CI output.
 - **scheduled** - implemented now; runs on a schedule of at least weekly; not a pull-request check.
 - **pending** - not implemented, because an accepted prerequisite is still open. A pending gate has no job, is never a required check, and is printed as
   `PENDING ... NOT passed` in every run (log, `::warning::` annotation and job summary). Pending gates are how the unavailable capabilities are recorded:
-  migration verification (runner undecided), the pooled-connection-leak test (test-only pooler undecided) and the Foundation brief section 14 catalogue rows
-  that later tasks deliver.
+  the pooled-connection-leak test (test-only pooler undecided) and the Foundation brief section 14 catalogue rows that later tasks deliver. Fresh-database
+  migration verification is implemented (Foundation task 3); previous-release upgrade verification is not yet representable in this catalogue and is not claimed.
 
 ## How "pending by accepted prerequisite" differs from "missing unexpectedly"
 

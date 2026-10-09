@@ -22,9 +22,15 @@ export default defineConfig({
         },
       },
       {
+        // Real PostgreSQL 18 (STACK-ADR-001 4.7): Testcontainers by default, or the CI service container with
+        // CM_TEST_POSTGRES=external. Files run one after another because roles are cluster-wide.
         test: {
           name: 'integration',
           include: ['tests/integration/**/*.test.ts'],
+          globalSetup: ['tests/integration/support/global-setup.ts'],
+          fileParallelism: false,
+          testTimeout: 60000,
+          hookTimeout: 180000,
         },
       },
     ],

@@ -26,7 +26,7 @@ test('pins are discovered from the real repository: runtime, package manager, li
   assert.equal(by('gitleaks')[0].current, '8.30.1');
   assert.equal(by('trivy').length, 1);
   const images = pins.filter((p) => p.kind === 'container-image');
-  assert.deepEqual(images.map((i) => i.name).sort(), ['node', 'postgres']);
+  assert.deepEqual(images.map((i) => i.name).sort(), ['node', 'postgres', 'postgres', 'postgres', 'postgres']);
   for (const i of images) assert.match(i.digest, /^sha256:[0-9a-f]{64}$/);
 });
 

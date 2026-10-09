@@ -4,9 +4,9 @@
   "prerequisites": {
     "decision-migration-runner": {
       "kind": "decision",
-      "status": "OPEN",
-      "summary": "Migration runner is DEFERRED; no runner is chosen or assumed",
-      "source": "STACK-ADR-001 4.4 B and section 6"
+      "status": "RESOLVED",
+      "summary": "Migration runner decided: minimal in-repository TypeScript runner, migration-history placement schema migration (STACK-ADR-003, ACCEPTED 2026-10-09)",
+      "source": "STACK-ADR-003 sections 4, 5 and 13; STACK-ADR-001 4.4 B and section 6"
     },
     "decision-test-only-pooler": {
       "kind": "decision",
@@ -28,9 +28,9 @@
     },
     "fb20-task-3": {
       "kind": "task-delivery",
-      "status": "OPEN",
-      "summary": "Database baseline: roles/grants, module schemas, RLS template, table-category registry gate, cross-schema FK test",
-      "source": "Foundation brief section 20 task 3"
+      "status": "RESOLVED",
+      "summary": "Database baseline delivered: four decided roles asserted (cm_resolver NOT created: blocked by CR-7 item 5 and the managed-PostgreSQL decision), 14 module schemas + audit + migration, RLS template, table-category registry gate, no-cross-schema-FK test, migration runner. Production bootstrap and cm_resolver stay blocked",
+      "source": "Foundation brief section 20 task 3 [A-2]; STACK-ADR-003"
     },
     "fb20-task-4": {
       "kind": "task-delivery",
@@ -182,6 +182,27 @@
       "source": "STACK-ADR-002 section 8 (Task 2 capability table): integration job skeleton with a PostgreSQL 18 container; STACK-ADR-001 4.14, 4.7"
     },
     {
+      "id": "migration-verification",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "migration-verification",
+      "source": "FB 14 row ADR-023 Migrations; STACK-ADR-003 sections 9, 10 and 13; STACK-ADR-001 4.4 A.5, A.6, A.8 (fresh-database migration, and a reviewer-readable schema-only dump plus roles-only dump with no role password hashes in the job log and job summary; no artifact; the previous-release upgrade path is not representable yet and is NOT claimed)"
+    },
+    {
+      "id": "integration-real-roles",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "integration-real-roles",
+      "source": "STACK-ADR-002 section 8 (integration jobs connect with the real roles); STACK-ADR-001 4.7; STACK-ADR-003 section 6; FB 16 rows 3 and 4 (cm_resolver excluded: CR-7 item 5)"
+    },
+    {
+      "id": "table-category-registry-vs-rls",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "table-category-registry-vs-rls",
+      "source": "FB 14 row DM 29 Tenancy: registry vs RLS coverage; DM 6.2, 6.3; FB 16 rows 3, 7 and the registry/TENANT parts of row 8 (the OPERATIONAL 'no S2-S4 column except hashes' clause is NOT implemented: it needs the Privacy classification register)"
+    },
+    {
       "id": "dependency-scan",
       "state": "required",
       "workflow": ".github/workflows/ci.yml",
@@ -222,27 +243,6 @@
       "workflow": ".github/workflows/dependency-report-weekly.yml",
       "job": "dependency-report-weekly",
       "source": "STACK-ADR-002 6.7 (report at least weekly)"
-    },
-    {
-      "id": "migration-verification",
-      "state": "pending",
-      "source": "FB 14 row ADR-023 Migrations; STACK-ADR-002 section 8; STACK-ADR-001 4.4 A.6",
-      "prerequisites": ["decision-migration-runner", "fb20-task-3"],
-      "reason": "migration runner not decided; no migration exists; nothing can honestly be verified"
-    },
-    {
-      "id": "integration-real-roles",
-      "state": "pending",
-      "source": "STACK-ADR-002 section 8 (integration jobs connect with the real roles); STACK-ADR-001 4.7",
-      "prerequisites": ["fb20-task-3"],
-      "reason": "the five database roles are created by the database baseline task"
-    },
-    {
-      "id": "table-category-registry-vs-rls",
-      "state": "pending",
-      "source": "FB 14 row DM 29 Tenancy: registry vs RLS coverage",
-      "prerequisites": ["fb20-task-3"],
-      "reason": "delivered with the database baseline"
     },
     {
       "id": "cross-tenant-endpoint-suite",
@@ -303,7 +303,7 @@
     {
       "id": "purge-handler-registration-gate",
       "state": "pending",
-      "source": "FB 14 row DM 29 Privacy; ADR-006; DM 34",
+      "source": "FB 14 row DM 29 Privacy; ADR-006; DM 34. The same Privacy classification-register delivery also completes the DM 6.3 assertion that OPERATIONAL tables contain no S2-S4 columns except hashes, which task 3 does not implement",
       "prerequisites": ["fb20-task-11", "fb20-task-12"],
       "reason": "needs the Privacy-owned classification register"
     },
