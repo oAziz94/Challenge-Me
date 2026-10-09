@@ -13,6 +13,21 @@ export const AUTHORITATIVE_PREFIX = 'docs/specifications/authoritative/';
 const DECISIONS_DIR = 'docs/decisions';
 const AUTHORITATIVE_DIR = 'docs/specifications/authoritative';
 
+// Exact root paths that define the Task 2 CI gates (scripts, lint/format/type/test/architecture scope, image and dependency pins).
+export const TASK2_GATE_DEFINING_FILES = Object.freeze([
+  'package.json',
+  '.prettierignore',
+  '.prettierrc.json',
+  'eslint.config.mjs',
+  'vitest.config.ts',
+  'tsconfig.json',
+  '.dependency-cruiser.cjs',
+  'Dockerfile',
+  '.dockerignore',
+  'pnpm-lock.yaml',
+  '.node-version',
+]);
+
 // Paths whose changes CI cannot judge on its own: the change may rewrite the check that judges it.
 // STACK-ADR-002 §6.3 "Self-modifying changes". Notice only; a notice is not proof of safety.
 const SELF_MODIFYING = [
@@ -22,6 +37,9 @@ const SELF_MODIFYING = [
   (p) => p === '.claude/settings.json',
   (p) => p === '.gitignore' || p === '.gitattributes' || p === '.gitleaks.toml',
   (p) => /(^|\/)CODEOWNERS$/.test(p),
+  // Foundation Task 2 gate-defining root files (extension authorized by the engineering authority): they define what the
+  // CI gates run, lint, format, type-check, test, ignore, install or build.
+  (p) => TASK2_GATE_DEFINING_FILES.includes(p),
 ];
 // STACK-ADR-002 §6.3 "Governance and CI files": reported so the engineering authority sees them.
 const GOVERNANCE = [

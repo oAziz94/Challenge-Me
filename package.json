@@ -1,0 +1,34 @@
+{
+  "name": "challenge-me",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Challenge Me commercial V1 (Foundation Task 2: CI skeleton; no application code yet)",
+  "engines": {
+    "node": "24.21.0"
+  },
+  "packageManager": "pnpm@12.10.1+sha512.ba40a37eb1a370d60fea8c4cf1d364c13bcccef518e98ad2bcee954f539d38da37458e58261a3fa55e06523450ea0ffff9f497b135be41f2c15c1642bacace6c",
+  "scripts": {
+    "lint": "eslint .",
+    "format:check": "prettier --check .",
+    "format:write": "prettier --write .",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test:unit": "vitest run --project unit",
+    "test:governance": "node --test \"scripts/governance/test/*.test.mjs\"",
+    "test:ci-gates": "node --test \"scripts/governance/ci-gates/test/*.test.mjs\"",
+    "check:architecture": "node scripts/governance/ci-gates/architecture-check.mjs",
+    "check:gates": "node scripts/governance/ci-gates/check-gates.mjs",
+    "report:dependencies": "node scripts/governance/ci-gates/dependency-report.mjs"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.1",
+    "dependency-cruiser": "^18.5.0",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.9",
+    "typescript": "6.0.3",
+    "typescript-eslint": "^8.71.1",
+    "vitest": "^5.0.3",
+    "yaml": "^2.9.1"
+  }
+}

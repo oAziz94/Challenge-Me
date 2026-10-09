@@ -1,0 +1,37 @@
+# Weekly automated dependency report (STACK-ADR-002 6.7; STACK-ADR-001 section 7 rule 7). Report only: no bot-authored
+# commit, no dependency-update pull request, no write permission. The same report also runs on every pull request and every
+# change to main as the dependency-report job of ci.yml, so it runs whenever the lockfile, workflows or image definitions change.
+# This file is a protection-mechanism file (STACK-ADR-002 6.3).
+name: dependency-report-weekly
+
+on:
+  schedule:
+    - cron: '17 5 * * 1'
+  workflow_dispatch:
+
+permissions: {}
+
+env:
+  NODE_VERSION: v24.21.0
+  NODE_SHA256: 6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  CI: 'true'
+
+jobs:
+  dependency-report-weekly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    steps:
+      - name: Fetch the default branch tip that triggered the run
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --no-tags --depth=1 origin "$GITHUB_SHA"
+          git checkout -q --detach "$GITHUB_SHA"
+          test "$(git rev-parse HEAD)" = "$GITHUB_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Dependency report (current pin, proposed target, vulnerability information)
+        run: corepack pnpm run report:dependencies
