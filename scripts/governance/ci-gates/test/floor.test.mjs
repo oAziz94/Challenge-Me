@@ -32,9 +32,11 @@ test('the floors in code equal the pending gates and registry in gates.json (so 
   assert.deepEqual(pending.map((g) => g.id).sort(), pendingIds.sort());
   for (const g of pending) assert.deepEqual([...g.prerequisites].sort(), [...PENDING_FLOOR[g.id]].sort(), g.id);
   assert.deepEqual(Object.keys(cat.prerequisites).sort(), [...PREREQUISITE_FLOOR].sort());
-  // every pinned prerequisite is used by at least one pinned pending gate
+  // every OPEN pinned prerequisite is used by at least one pinned pending gate; a RESOLVED one stays in the registry as the record of the decision
   const used = new Set(Object.values(PENDING_FLOOR).flat());
-  for (const p of PREREQUISITE_FLOOR) assert.ok(used.has(p), `${p} is pinned but no pending gate waits on it`);
+  for (const p of PREREQUISITE_FLOOR) {
+    if (cat.prerequisites[p].status === 'OPEN') assert.ok(used.has(p), `${p} is pinned and OPEN but no pending gate waits on it`);
+  }
 });
 
 test('deleting migration-verification fails', () => {
@@ -92,12 +94,12 @@ test('replacing a legitimate prerequisite with an invented OPEN prerequisite fai
 test('adding an invented OPEN prerequisite to a gate (keeping the legitimate ones), or dropping one, fails', () => {
   const c = realCatalogue();
   c.prerequisites['invented-open-prerequisite'] = { kind: 'decision', status: 'OPEN', summary: 'extra', source: 'nowhere' };
-  c.gates.find((g) => g.id === 'migration-verification').prerequisites.push('invented-open-prerequisite');
-  assert.ok(has(run(c), /gate "migration-verification": prerequisites must be exactly/));
+  c.gates.find((g) => g.id === 'pooled-connection-leak').prerequisites.push('invented-open-prerequisite');
+  assert.ok(has(run(c), /gate "pooled-connection-leak": prerequisites must be exactly/));
 
   const c2 = realCatalogue();
-  c2.gates.find((g) => g.id === 'migration-verification').prerequisites = ['decision-migration-runner'];
-  assert.ok(has(run(c2), /gate "migration-verification": prerequisites must be exactly/));
+  c2.gates.find((g) => g.id === 'pooled-connection-leak').prerequisites = ['decision-test-only-pooler'];
+  assert.ok(has(run(c2), /gate "pooled-connection-leak": prerequisites must be exactly/));
 });
 
 test('adding an unpinned prerequisite to the registry, or deleting a pinned one, fails', () => {
@@ -113,18 +115,18 @@ test('adding an unpinned prerequisite to the registry, or deleting a pinned one,
 
 test('promoting a pending gate to required fails; promoting it and then deleting it from the catalogue fails too', () => {
   const promoted = realCatalogue();
-  const g = promoted.gates.find((x) => x.id === 'migration-verification');
-  Object.assign(g, { state: 'required', workflow: '.github/workflows/ci.yml', job: 'migration-verification' });
+  const g = promoted.gates.find((x) => x.id === 'pooled-connection-leak');
+  Object.assign(g, { state: 'required', workflow: '.github/workflows/ci.yml', job: 'pooled-connection-leak' });
   delete g.prerequisites;
   delete g.reason;
   const r = run(promoted);
-  assert.ok(has(r, /gate "migration-verification": not in the implemented floor/));
-  assert.ok(has(r, /gate "migration-verification": job "migration-verification" is missing/));
-  assert.ok(has(r, /gate "migration-verification": must stay pending/));
+  assert.ok(has(r, /gate "pooled-connection-leak": not in the implemented floor/));
+  assert.ok(has(r, /gate "pooled-connection-leak": job "pooled-connection-leak" is missing/));
+  assert.ok(has(r, /gate "pooled-connection-leak": must stay pending/));
 
   const deleted = realCatalogue();
-  deleted.gates = deleted.gates.filter((x) => x.id !== 'migration-verification');
-  assert.ok(has(run(deleted), /gate "migration-verification": missing from the catalogue/));
+  deleted.gates = deleted.gates.filter((x) => x.id !== 'pooled-connection-leak');
+  assert.ok(has(run(deleted), /gate "pooled-connection-leak": missing from the catalogue/));
 });
 
 test('resolving every legitimate prerequisite makes the pending state invalid and forces implementation', () => {
@@ -135,11 +137,11 @@ test('resolving every legitimate prerequisite makes the pending state invalid an
   }
   // resolving only some of them keeps the gate pending
   const c = realCatalogue();
-  c.prerequisites['fb20-task-3'].status = 'RESOLVED';
+  c.prerequisites['fb20-task-4'].status = 'RESOLVED';
   const r = run(c);
-  assert.ok(!has(r, /gate "migration-verification": every prerequisite is RESOLVED/));
+  assert.ok(!has(r, /gate "pooled-connection-leak": every prerequisite is RESOLVED/));
   assert.ok(
-    has(r, /gate "integration-real-roles": every prerequisite is RESOLVED/),
+    has(r, /gate "cross-tenant-endpoint-suite": every prerequisite is RESOLVED/),
     'a gate that waited only on that task must now be implemented',
   );
 });

@@ -1,0 +1,2 @@
+# Migration SQL is pinned to LF so that checksums are byte-identical on every platform (STACK-ADR-003 section 4).
+migrations/*.sql text eol=lf

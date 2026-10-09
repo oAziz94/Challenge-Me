@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Challenge Me commercial V1 (Foundation Task 2: CI skeleton; no application code yet)",
+  "description": "Challenge Me commercial V1 (Foundation Task 3: database baseline and migration runner; no application features yet)",
   "engines": {
     "node": "24.21.0"
   },
@@ -14,21 +14,30 @@
     "format:write": "prettier --write .",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "test:unit": "vitest run --project unit",
+    "test:migration": "vitest run --project integration tests/integration/migration",
+    "test:database": "vitest run --project integration tests/integration/database",
+    "test:registry": "vitest run --project integration tests/integration/registry",
     "test:governance": "node --test \"scripts/governance/test/*.test.mjs\"",
     "test:ci-gates": "node --test \"scripts/governance/ci-gates/test/*.test.mjs\"",
     "check:architecture": "node scripts/governance/ci-gates/architecture-check.mjs",
     "check:gates": "node scripts/governance/ci-gates/check-gates.mjs",
-    "report:dependencies": "node scripts/governance/ci-gates/dependency-report.mjs"
+    "report:dependencies": "node scripts/governance/ci-gates/dependency-report.mjs",
+    "migrate": "node --env-file-if-exists=.env.local src/foundation/migrations/cli.ts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.19.1",
+    "@types/pg": "^8.23.1",
     "dependency-cruiser": "^18.5.0",
     "eslint": "^10.12.0",
     "prettier": "^3.9.9",
+    "testcontainers": "^12.2.0",
     "typescript": "6.0.3",
     "typescript-eslint": "^8.71.1",
     "vitest": "^5.0.3",
     "yaml": "^2.9.1"
+  },
+  "dependencies": {
+    "pg": "^8.23.1"
   }
 }

@@ -32,6 +32,9 @@ export const IMPLEMENTED_FLOOR = Object.freeze({
   'governance-tests': 'required',
   architecture: 'required',
   'integration-skeleton': 'required',
+  'migration-verification': 'required',
+  'integration-real-roles': 'required',
+  'table-category-registry-vs-rls': 'required',
   'dependency-scan': 'required',
   'image-build': 'required',
   'image-scan': 'required',
@@ -46,9 +49,6 @@ export const IMPLEMENTED_FLOOR = Object.freeze({
  * meta-gate. Implementing a gate, or changing what it waits for, is a reviewed change of THIS file (STACK-ADR-002 6.3).
  */
 export const PENDING_FLOOR = Object.freeze({
-  'migration-verification': Object.freeze(['decision-migration-runner', 'fb20-task-3']),
-  'integration-real-roles': Object.freeze(['fb20-task-3']),
-  'table-category-registry-vs-rls': Object.freeze(['fb20-task-3']),
   'cross-tenant-endpoint-suite': Object.freeze(['fb20-task-4']),
   'pooled-connection-leak': Object.freeze(['decision-test-only-pooler', 'fb20-task-4']),
   'job-tenant-mismatch': Object.freeze(['cr-10-tenantless-job-envelope', 'fb20-task-7']),
@@ -305,6 +305,10 @@ export const EXPECTED_SCRIPTS = Object.freeze({
   'test:ci-gates': 'node --test "scripts/governance/ci-gates/test/*.test.mjs"',
   'check:architecture': 'node scripts/governance/ci-gates/architecture-check.mjs',
   'check:gates': 'node scripts/governance/ci-gates/check-gates.mjs',
+  'test:migration': 'vitest run --project integration tests/integration/migration',
+  'test:database': 'vitest run --project integration tests/integration/database',
+  'test:registry': 'vitest run --project integration tests/integration/registry',
+  migrate: 'node --env-file-if-exists=.env.local src/foundation/migrations/cli.ts',
   'report:dependencies': 'node scripts/governance/ci-gates/dependency-report.mjs',
 });
 
@@ -350,6 +354,10 @@ export const EXPECTED_RUNS = Object.freeze([
   { file: '.github/workflows/ci.yml', job: 'governance-tests', run: 'corepack pnpm run test:ci-gates' },
   { file: '.github/workflows/ci.yml', job: 'architecture', run: 'corepack pnpm run check:architecture' },
   { file: '.github/workflows/ci.yml', job: 'integration-skeleton', run: 'bash scripts/governance/ci-gates/postgres-probe.sh' },
+  { file: '.github/workflows/ci.yml', job: 'migration-verification', fromEnd: 2, run: 'corepack pnpm run test:migration' },
+  { file: '.github/workflows/ci.yml', job: 'migration-verification', run: 'bash scripts/governance/ci-gates/schema-review-dump.sh' },
+  { file: '.github/workflows/ci.yml', job: 'integration-real-roles', run: 'corepack pnpm run test:database' },
+  { file: '.github/workflows/ci.yml', job: 'table-category-registry-vs-rls', run: 'corepack pnpm run test:registry' },
   { file: '.github/workflows/ci.yml', job: 'dependency-scan', run: 'node scripts/governance/ci-gates/vulnerability-report.mjs dependency' },
   {
     file: '.github/workflows/ci.yml',

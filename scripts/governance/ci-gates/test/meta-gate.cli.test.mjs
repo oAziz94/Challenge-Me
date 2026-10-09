@@ -50,7 +50,8 @@ test('the unmodified repository passes; every pending gate is listed and none is
   const r = gate(dir);
   assert.equal(r.code, 0, r.out);
   assert.match(r.out, /PENDING gates \(NOT implemented/);
-  assert.match(r.out, /migration-verification {2}<- decision-migration-runner, fb20-task-3/);
+  assert.match(r.out, /cross-tenant-endpoint-suite {2}<- fb20-task-4/);
+  assert.doesNotMatch(r.out, /migration-verification {2}<-/, 'migration-verification is implemented, not pending');
   assert.match(r.out, /pooled-connection-leak {2}<- fb20-task-4, decision-test-only-pooler/);
   assert.match(r.out, /NOT passed gates/);
   const gates = JSON.parse(readFileSync(join(dir, 'scripts/governance/ci-gates/gates.json'), 'utf8')).gates;
@@ -75,6 +76,9 @@ test('--list-required-checks prints exactly the required gates (for registering 
     'unit',
     'architecture',
     'integration-skeleton',
+    'migration-verification',
+    'integration-real-roles',
+    'table-category-registry-vs-rls',
     'dependency-scan',
     'image-build',
     'image-scan',
@@ -82,7 +86,7 @@ test('--list-required-checks prints exactly the required gates (for registering 
   ]) {
     assert.ok(names.includes(n), n);
   }
-  assert.ok(!names.includes('migration-verification'), 'pending gates are not required checks');
+  assert.ok(!names.includes('pooled-connection-leak'), 'pending gates are not required checks');
   assert.ok(!names.includes('dependency-report-weekly'), 'the scheduled gate is not a pull-request check');
 });
 
@@ -622,5 +626,5 @@ test('the approved root package.json and .prettierrc.json stay allowed, and the 
   assert.ok(listRepositoryFiles(root).includes('package.json') && listRepositoryFiles(root).includes('.prettierrc.json'));
   const r = gate(copyRepo());
   assert.equal(r.code, 0, r.out);
-  assert.match(r.out, /Gate catalogue: 16 required, 1 scheduled, 24 pending\./);
+  assert.match(r.out, /Gate catalogue: 19 required, 1 scheduled, 21 pending\./);
 });
