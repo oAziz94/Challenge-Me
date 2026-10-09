@@ -1061,12 +1061,16 @@ function replacedRepoWithConfig() {
   return r;
 }
 
-test('R-1: GIT_NO_REPLACE_OBJECTS alone is defeated by core.useReplaceRefs=true, the gate environment is not', () => {
+test('R-1: ordinary Git reads the replacement under core.useReplaceRefs=true; the gate environment reads the original whatever the Git version does with the environment control alone', () => {
   const { repo, token, secretId } = replacedRepoWithConfig();
   try {
-    // attack precondition (token never printed): ordinary Git, and even Git with only the environment control, read the replacement
+    // attack precondition (token never printed): ordinary Git reads the replacement and does not show the original
     assert.equal(showsToken(gx(repo.dir, ['cat-file', '-p', secretId]), token), false);
-    assert.equal(showsToken(gx(repo.dir, ['cat-file', '-p', secretId], { GIT_NO_REPLACE_OBJECTS: '1' }), token), false, 'the environment control alone is overridden by the configuration');
+    // Whether GIT_NO_REPLACE_OBJECTS=1 alone beats core.useReplaceRefs=true is Git-version behaviour: older Git (2.37) lets the
+    // configuration win, newer Git (the GitHub Linux runner) lets the environment win. The invariant does not depend on it: the
+    // gate environment below reads the original in both cases. The observed behaviour is recorded, not asserted.
+    const envOnlyShowsOriginal = showsToken(gx(repo.dir, ['cat-file', '-p', secretId], { GIT_NO_REPLACE_OBJECTS: '1' }), token);
+    assert.equal(typeof envOnlyShowsOriginal, 'boolean');
     // the gate-owned environment reads the original, whatever the caller injects
     for (const ambient of [{}, HOSTILE_CONFIG, { GIT_NO_REPLACE_OBJECTS: '0', ...HOSTILE_CONFIG }]) {
       const git = defaultGit(repo.dir, { ...process.env, ...ambient });
@@ -1119,8 +1123,10 @@ test('R-1 real: a replacement-aware ordinary scan is clean, the gate-environment
   try {
     const report = join(mkdtempSync(join(tmpdir(), 'cm-r1-')), 'r.json');
     const scan = (run, env) => run(['git', '--log-opts=--all', repo.dir, '--redact=100', '--no-banner', '--no-color', '--report-format', 'json', '--report-path', report]);
-    // precondition: with only GIT_NO_REPLACE_OBJECTS=1 the scanner's internal Git is still replacement-aware and finds nothing
-    assert.equal(scan(rawRun({ GIT_NO_REPLACE_OBJECTS: '1' })).code, 0, 'the environment control alone is fooled');
+    // precondition: an ordinary replacement-aware scan (the caller's environment untouched) finds nothing
+    assert.equal(scan(rawRun()).code, 0, 'the ordinary scan is fooled by the replacement');
+    // GIT_NO_REPLACE_OBJECTS=1 alone may or may not defeat core.useReplaceRefs=true depending on the Git version; either result is valid
+    assert.ok([0, 1].includes(scan(rawRun({ GIT_NO_REPLACE_OBJECTS: '1' })).code));
     // the gate-owned child environment makes the same scanner read the original object, even against hostile caller values
     assert.equal(scan(realRun()).code, 1);
     assert.equal(scan(realRun(HOSTILE_CONFIG)).code, 1);

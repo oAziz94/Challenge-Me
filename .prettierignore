@@ -1,0 +1,19 @@
+# Frozen contract documents are never reformatted (STACK-ADR-001 4.9).
+docs/specifications/authoritative/
+
+# Outside the format baseline of Foundation Task 2: accepted governance documents and the accepted, human-reviewed
+# Task 1 protection scripts. Reformatting them would be an unrequested change to accepted artifacts; a later reviewed
+# change may bring them in. New files are checked by default.
+docs/
+.claude/
+PROJECT-STATE.md
+AGENTS.md
+CLAUDE.md
+scripts/governance/*.mjs
+scripts/governance/lib/
+scripts/governance/test/
+scripts/governance/README.md
+
+# Generated or vendored
+node_modules/
+pnpm-lock.yaml

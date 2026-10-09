@@ -1,0 +1,423 @@
+# Foundation Task 2 - CI skeleton (STACK-ADR-002 section 8; STACK-ADR-001 4.7, 4.9, 4.12, 4.13, 4.14).
+# This file is a protection-mechanism file: a change to it is a self-modifying change (STACK-ADR-002 6.3). CI output is
+# not authoritative evidence for such a change; the human reading of the diff is.
+#
+# Every job id below is a required status check on main and is listed in scripts/governance/ci-gates/gates.json.
+# The gate-catalogue job fails when a catalogued gate or its job disappears, when a workflow breaks the policy
+# (no privileged trigger, permissions {}, no write permission, no secret, no unpinned action or image), and when a
+# "pending" gate is not backed by an accepted, still-open prerequisite. Gates that cannot be implemented yet
+# (migration verification, pooled-connection leak, the FB section 14 catalogue rows) have NO job here on purpose:
+# they are pending in the catalogue and are listed as PENDING, never reported as passed.
+#
+# No third-party action is used. Node.js and the scanner are downloaded and verified against pinned SHA-256 values;
+# pnpm comes from corepack and is verified against the hash in package.json; images are pinned by digest.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions: {}
+
+env:
+  # Node 24 is the Phase 1 runtime baseline (STACK-ADR-001 section 7); the same exact version is in .node-version and the Dockerfile.
+  NODE_VERSION: v24.21.0
+  NODE_SHA256: 6e1db87ef58b8819e5d5402eff1536491b18edd8eb7bee5ef7897876e88dc5ff
+  # gitleaks 8.30.1 Linux x64, used by the real-scanner tests of the governance test suite (the secret-scan gate is in governance.yml).
+  GITLEAKS_VERSION: 8.30.1
+  GITLEAKS_SHA256: 551f6fc83ea457d62a0d98237cbad105af8d557003051f41f3e7ca7b3f2470eb
+  # Trivy Linux x64 (Apache-2.0); SHA-256 from the project's published trivy_0.75.0_checksums.txt.
+  IMAGE_SCANNER_VERSION: 0.75.0
+  IMAGE_SCANNER_SHA256: c6e65abddb348e25f10549df887045629cf28cc72453cd1c63acb717316b3f3f
+  COREPACK_ENABLE_DOWNLOAD_PROMPT: '0'
+  CI: 'true'
+
+jobs:
+  install-frozen:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile (pinned Node.js, pinned pnpm, no install scripts)
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Report the toolchain that was installed
+        run: |
+          node --version
+          corepack pnpm --version
+          corepack pnpm ls --depth 0
+
+  lint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Lint
+        run: corepack pnpm run lint
+
+  format:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Format check
+        run: corepack pnpm run format:check
+
+  typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Type-check
+        run: corepack pnpm run typecheck
+
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Unit tests (Vitest project "unit"; a project that finds no test file fails)
+        run: corepack pnpm run test:unit
+
+  governance-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the history of the commit under test (the real-repository tests need it; they skip on a shallow clone)
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --no-tags origin "+refs/heads/*:refs/remotes/origin/*"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          fi
+          git cat-file -e "${TARGET_SHA}^{commit}"
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+          test "$(git rev-parse --is-shallow-repository)" = "false"
+      - name: Install Node.js, the frozen lockfile and the pinned gitleaks (for the real-scanner tests)
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install --gitleaks
+      - name: Task 1 governance tests
+        run: corepack pnpm run test:governance
+      - name: Task 2 gate-machinery tests
+        run: corepack pnpm run test:ci-gates
+
+  architecture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Architecture rules (dependency-cruiser) with a self-test that proves the gate can fail
+        run: corepack pnpm run check:architecture
+
+  integration-skeleton:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      PGHOST: localhost
+      PGPORT: '5432'
+      PGUSER: postgres
+    services:
+      postgres:
+        # PostgreSQL 18 is the Phase 1 baseline major (STACK-ADR-001 4.14). Pinned by digest. The container exists only
+        # inside this job; it uses trust authentication on the job-local network and holds no credential.
+        image: postgres:18.6@sha256:74935e72241653ca55e0414067e6d8763aceb8a810eb51b452253ec3dcfc4336
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: PostgreSQL 18 service container is reachable and is major 18
+        run: bash scripts/governance/ci-gates/postgres-probe.sh
+      # No application integration test exists yet. The Vitest "integration" project is defined and the real-roles and
+      # migration steps are PENDING gates in the catalogue (integration-real-roles, migration-verification); they are not run
+      # here and are not reported as passed.
+
+  dependency-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      # Green means: the audit executed and returned a complete result, and its findings were reported. A finding alone does
+      # not fail this job: no findings-based failure policy is decided (decision-vulnerability-findings-policy is OPEN).
+      # The job fails only if the audit cannot be performed honestly (tool failure, registry unavailable, unreadable result).
+      - name: Dependency vulnerability scan (executes and reports findings; findings alone do not fail)
+        run: node scripts/governance/ci-gates/vulnerability-report.mjs dependency
+
+  image-build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Build the OCI image (not pushed, not tagged for any registry)
+        run: docker build --tag challenge-me:ci .
+      - name: The image runs as a non-root user and starts on the pinned Node.js
+        run: |
+          set -euo pipefail
+          uid="$(docker run --rm --entrypoint id challenge-me:ci -u)"
+          echo "image user id: $uid"
+          test "$uid" != "0"
+          test "$(docker run --rm challenge-me:ci)" = "$NODE_VERSION"
+
+  image-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Build the OCI image (not pushed)
+        run: docker build --tag challenge-me:ci .
+      - name: Install Trivy (pinned by SHA-256)
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/trivy"
+          curl -fsSL --retry 3 -o "$RUNNER_TEMP/trivy.tar.gz" "https://github.com/aquasecurity/trivy/releases/download/v${IMAGE_SCANNER_VERSION}/trivy_${IMAGE_SCANNER_VERSION}_Linux-64bit.tar.gz"
+          echo "${IMAGE_SCANNER_SHA256}  $RUNNER_TEMP/trivy.tar.gz" | sha256sum -c -
+          tar -xzf "$RUNNER_TEMP/trivy.tar.gz" -C "$RUNNER_TEMP/trivy" trivy
+      - name: Install Node.js (pinned by SHA-256) for the scan report
+        run: bash scripts/governance/ci-gates/ci-setup.sh
+      # Green means: Trivy executed against the current vulnerability database and returned a complete result, and its findings
+      # were reported (all severities). A finding alone does not fail this job: no findings-based failure policy is decided
+      # (decision-vulnerability-findings-policy is OPEN). Trivy exits non-zero on execution errors (for example the database
+      # cannot be downloaded) and the report step fails on a missing or malformed result. Vulnerabilities only: no secret value can be printed.
+      - name: Image vulnerability scan (executes and reports findings; findings alone do not fail)
+        run: |
+          set -euo pipefail
+          "$RUNNER_TEMP/trivy/trivy" --version
+          "$RUNNER_TEMP/trivy/trivy" image --scanners vuln --no-progress --format json --output "$RUNNER_TEMP/trivy-report.json" challenge-me:ci
+          node scripts/governance/ci-gates/vulnerability-report.mjs image "$RUNNER_TEMP/trivy-report.json"
+
+  dependency-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Dependency report (current pin, proposed target, vulnerability information); runs on every change, so also when the lockfile, workflows or image definitions change
+        run: corepack pnpm run report:dependencies
+
+  gate-catalogue:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions: {}
+    env:
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+      TARGET_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+    steps:
+      - name: Fetch the commit under test
+        run: |
+          set -euo pipefail
+          git init -q .
+          git remote add origin "https://github.com/${GITHUB_REPOSITORY}.git"
+          if [ "$GITHUB_EVENT_NAME" = "pull_request" ]; then
+            git fetch -q --no-tags --depth=1 origin "refs/pull/${PR_NUMBER}/head"
+            test "$(git rev-parse FETCH_HEAD)" = "$TARGET_SHA"
+          else
+            git fetch -q --no-tags --depth=1 origin "$TARGET_SHA"
+          fi
+          git checkout -q --detach "$TARGET_SHA"
+          test "$(git rev-parse HEAD)" = "$TARGET_SHA"
+      - name: Install Node.js and the frozen lockfile
+        run: bash scripts/governance/ci-gates/ci-setup.sh --install
+      - name: Meta-gate - required gates present, workflow and supply-chain policy, pending gates backed by open prerequisites
+        run: corepack pnpm run check:gates

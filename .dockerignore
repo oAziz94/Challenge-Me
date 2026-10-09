@@ -1,0 +1,11 @@
+# Allowlist build context (STACK-ADR-001 4.12): nothing is sent to the builder unless it is named below.
+*
+!package.json
+!pnpm-lock.yaml
+!.node-version
+
+# Environment files never enter the build context (STACK-ADR-001 4.10), whatever the allowlist says.
+.env
+.env.*
+**/.env
+**/.env.*

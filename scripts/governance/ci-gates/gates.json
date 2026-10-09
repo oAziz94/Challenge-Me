@@ -1,0 +1,395 @@
+{
+  "schemaVersion": 1,
+  "allowedActions": [],
+  "prerequisites": {
+    "decision-migration-runner": {
+      "kind": "decision",
+      "status": "OPEN",
+      "summary": "Migration runner is DEFERRED; no runner is chosen or assumed",
+      "source": "STACK-ADR-001 4.4 B and section 6"
+    },
+    "decision-test-only-pooler": {
+      "kind": "decision",
+      "status": "OPEN",
+      "summary": "Test-only transaction-mode pooler selection is OPEN",
+      "source": "Foundation brief section 18 item 17; STACK-ADR-001 4.7"
+    },
+    "cr-10-tenantless-job-envelope": {
+      "kind": "decision",
+      "status": "OPEN",
+      "summary": "CR-10 (job envelope for jobs without a tenant) is OPEN",
+      "source": "Foundation brief section 20 task 7; CR-10"
+    },
+    "cr-7-resolver-privileges": {
+      "kind": "decision",
+      "status": "OPEN",
+      "summary": "CR-7 (resolver schema and ownership privileges) is OPEN",
+      "source": "Foundation brief section 16 row 4, section 20 task 3; CR-7"
+    },
+    "fb20-task-3": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Database baseline: roles/grants, module schemas, RLS template, table-category registry gate, cross-schema FK test",
+      "source": "Foundation brief section 20 task 3"
+    },
+    "fb20-task-4": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "ActorContext, TenantTransaction, session-SET lint, cross-tenant harness, NOT_FOUND",
+      "source": "Foundation brief section 20 task 4"
+    },
+    "fb20-task-4a": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Resolver infrastructure (foundation schema, six X1 resolver functions)",
+      "source": "Foundation brief section 20 task 4a"
+    },
+    "fb20-task-5": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Audit foundation",
+      "source": "Foundation brief section 20 task 5"
+    },
+    "fb20-task-6": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Event envelope and processed-event convention",
+      "source": "Foundation brief section 20 task 6"
+    },
+    "fb20-task-7": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Queue and admission foundation",
+      "source": "Foundation brief section 20 task 7"
+    },
+    "fb20-task-8": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "StorageProvider port and deletion-ledger primitive",
+      "source": "Foundation brief section 20 task 8"
+    },
+    "fb20-task-9": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Secret-store/KMS access path",
+      "source": "Foundation brief section 20 task 9"
+    },
+    "fb20-task-11": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Architecture and security tests",
+      "source": "Foundation brief section 20 task 11"
+    },
+    "fb20-task-12": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "summary": "Privacy classification-register handoff and purge registrations",
+      "source": "Foundation brief section 20 task 12"
+    },
+    "decision-vulnerability-findings-policy": {
+      "kind": "decision",
+      "status": "OPEN",
+      "owner": "engineering authority",
+      "summary": "The findings-based failure policy for dependency and image vulnerability scans (any severity, score or fixability threshold, allow-list or exception policy) is not decided. The scans execute and report findings and fail only when they cannot be performed honestly",
+      "source": "STACK-ADR-001 4.13 (requires dependency and image vulnerability scanning as CI capabilities and sets no failure threshold); STACK-ADR-002 section 7 (scanner products are task 2 implementation details) and E5"
+    },
+    "fb20-no-assigned-task-owner": {
+      "kind": "task-delivery",
+      "status": "OPEN",
+      "owner": "engineering authority",
+      "summary": "No task of the approved Foundation sequence (FB section 20) currently owns this row, and none is assumed here. Assigning an owner is the engineering authority's decision",
+      "source": "Foundation brief section 14 (row W1 AC 30) and section 20 (no task lists it)"
+    }
+  },
+  "gates": [
+    {
+      "id": "commit-identity",
+      "state": "required",
+      "workflow": ".github/workflows/governance.yml",
+      "job": "commit-identity",
+      "source": "STACK-ADR-002 6.9; Foundation Task 1",
+      "runsOn": ["pull_request"]
+    },
+    {
+      "id": "authoritative-path",
+      "state": "required",
+      "workflow": ".github/workflows/governance.yml",
+      "job": "authoritative-path",
+      "source": "STACK-ADR-002 6.3; Foundation Task 1",
+      "runsOn": ["pull_request"]
+    },
+    {
+      "id": "secret-scan",
+      "state": "required",
+      "workflow": ".github/workflows/governance.yml",
+      "job": "secret-scan",
+      "source": "STACK-ADR-002 6.8; FB 16 row 16; Foundation Task 1"
+    },
+    {
+      "id": "install-frozen",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "install-frozen",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): frozen-lockfile install with pinned Node.js and pnpm; STACK-ADR-001 4.13"
+    },
+    {
+      "id": "lint",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "lint",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): lint; STACK-ADR-001 4.9"
+    },
+    {
+      "id": "format",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "format",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): format check; STACK-ADR-001 4.9"
+    },
+    {
+      "id": "typecheck",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "typecheck",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): type-check; STACK-ADR-001 4.1"
+    },
+    {
+      "id": "unit",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "unit",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): unit-test job; STACK-ADR-001 4.7"
+    },
+    {
+      "id": "governance-tests",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "governance-tests",
+      "source": "Task 1 governance tests and Task 2 gate-machinery tests; AGENTS 7"
+    },
+    {
+      "id": "architecture",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "architecture",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): architecture-test job; STACK-ADR-001 4.8 layer 1, 4.7"
+    },
+    {
+      "id": "integration-skeleton",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "integration-skeleton",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): integration job skeleton with a PostgreSQL 18 container; STACK-ADR-001 4.14, 4.7"
+    },
+    {
+      "id": "dependency-scan",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "dependency-scan",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): dependency vulnerability scan; STACK-ADR-001 4.13"
+    },
+    {
+      "id": "image-build",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "image-build",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): OCI image build, no publishing; STACK-ADR-001 4.12; STACK-ADR-002 E7"
+    },
+    {
+      "id": "image-scan",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "image-scan",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): image vulnerability scan; STACK-ADR-001 4.13"
+    },
+    {
+      "id": "dependency-report",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "dependency-report",
+      "source": "STACK-ADR-002 6.7 automated dependency proposals: runs when the lockfile, workflows or image definitions change (every change)"
+    },
+    {
+      "id": "gate-catalogue",
+      "state": "required",
+      "workflow": ".github/workflows/ci.yml",
+      "job": "gate-catalogue",
+      "source": "STACK-ADR-002 section 8 (Task 2 capability table): a gate that fails when a required gate is missing; FB 20 task 2"
+    },
+    {
+      "id": "dependency-report-weekly",
+      "state": "scheduled",
+      "workflow": ".github/workflows/dependency-report-weekly.yml",
+      "job": "dependency-report-weekly",
+      "source": "STACK-ADR-002 6.7 (report at least weekly)"
+    },
+    {
+      "id": "migration-verification",
+      "state": "pending",
+      "source": "FB 14 row ADR-023 Migrations; STACK-ADR-002 section 8; STACK-ADR-001 4.4 A.6",
+      "prerequisites": ["decision-migration-runner", "fb20-task-3"],
+      "reason": "migration runner not decided; no migration exists; nothing can honestly be verified"
+    },
+    {
+      "id": "integration-real-roles",
+      "state": "pending",
+      "source": "STACK-ADR-002 section 8 (integration jobs connect with the real roles); STACK-ADR-001 4.7",
+      "prerequisites": ["fb20-task-3"],
+      "reason": "the five database roles are created by the database baseline task"
+    },
+    {
+      "id": "table-category-registry-vs-rls",
+      "state": "pending",
+      "source": "FB 14 row DM 29 Tenancy: registry vs RLS coverage",
+      "prerequisites": ["fb20-task-3"],
+      "reason": "delivered with the database baseline"
+    },
+    {
+      "id": "cross-tenant-endpoint-suite",
+      "state": "pending",
+      "source": "FB 14 row DM 29 Tenancy; W1 AC 1",
+      "prerequisites": ["fb20-task-4"],
+      "reason": "harness delivered with ActorContext and TenantTransaction"
+    },
+    {
+      "id": "pooled-connection-leak",
+      "state": "pending",
+      "source": "FB 14 row W1 AC 2; STACK-ADR-001 4.7",
+      "prerequisites": ["fb20-task-4", "decision-test-only-pooler"],
+      "reason": "needs a test-only transaction-mode pooler selection (FB 18 item 17); no pooler is chosen here"
+    },
+    {
+      "id": "job-tenant-mismatch",
+      "state": "pending",
+      "source": "FB 14 row W1 AC 3",
+      "prerequisites": ["fb20-task-7", "cr-10-tenantless-job-envelope"],
+      "reason": "queue foundation partly blocked by CR-10"
+    },
+    {
+      "id": "resolver-ids-only-audited",
+      "state": "pending",
+      "source": "FB 14 row DM 6.4 / W1 T-6 [CR-3]",
+      "prerequisites": ["fb20-task-4a"],
+      "reason": "resolver infrastructure not delivered"
+    },
+    {
+      "id": "resolver-boundary-closed-set",
+      "state": "pending",
+      "source": "FB 14 row DM 6.4 [CR-3]; DM X15",
+      "prerequisites": ["fb20-task-4a"],
+      "reason": "resolver infrastructure not delivered"
+    },
+    {
+      "id": "resolver-privilege-assertions",
+      "state": "pending",
+      "source": "FB 14 row DM 6.4 [CR-3-F1]",
+      "prerequisites": ["fb20-task-4a", "cr-7-resolver-privileges"],
+      "reason": "privilege contract is CR-7 and OPEN; no expected value exists yet"
+    },
+    {
+      "id": "resolver-search-path-regression",
+      "state": "pending",
+      "source": "FB 14 row Opus review finding R7",
+      "prerequisites": ["fb20-task-4a"],
+      "reason": "resolver infrastructure not delivered"
+    },
+    {
+      "id": "student-dto-canary-harness",
+      "state": "pending",
+      "source": "FB 14 row DM 29 Leakage; Arch 32",
+      "prerequisites": ["fb20-task-11"],
+      "reason": "architecture and security tests task"
+    },
+    {
+      "id": "purge-handler-registration-gate",
+      "state": "pending",
+      "source": "FB 14 row DM 29 Privacy; ADR-006; DM 34",
+      "prerequisites": ["fb20-task-11", "fb20-task-12"],
+      "reason": "needs the Privacy-owned classification register"
+    },
+    {
+      "id": "sensitive-logging-canary",
+      "state": "pending",
+      "source": "FB 14 row DM 29 Privacy; W1 AC 5, 20",
+      "prerequisites": ["fb20-task-5"],
+      "reason": "audit foundation task"
+    },
+    {
+      "id": "queue-discipline-and-leases",
+      "state": "pending",
+      "source": "FB 14 row DM 29 Queue; W1 AC 23-26, 28, 29",
+      "prerequisites": ["fb20-task-7", "cr-10-tenantless-job-envelope"],
+      "reason": "queue foundation partly blocked by CR-10"
+    },
+    {
+      "id": "no-transaction-across-io",
+      "state": "pending",
+      "source": "FB 14 row DM 29 Queue; ADR-001; AGENTS 7",
+      "prerequisites": ["fb20-task-7"],
+      "reason": "lint rule and runtime guard delivered with the queue and data-access tasks"
+    },
+    {
+      "id": "admission-control-contention",
+      "state": "pending",
+      "source": "FB 14 row W1 AC 27",
+      "prerequisites": ["fb20-task-7"],
+      "reason": "queue foundation task"
+    },
+    {
+      "id": "audit-append-only-same-transaction",
+      "state": "pending",
+      "source": "FB 14 row W1 AC 19, 21, 22",
+      "prerequisites": ["fb20-task-5"],
+      "reason": "audit foundation task"
+    },
+    {
+      "id": "storage-download-link-contract",
+      "state": "pending",
+      "source": "FB 14 row W1 AC 4",
+      "prerequisites": ["fb20-task-8"],
+      "reason": "StorageProvider port task"
+    },
+    {
+      "id": "deletion-ledger-write-once-contract",
+      "state": "pending",
+      "source": "FB 16 row 12; DM X11",
+      "prerequisites": ["fb20-task-8"],
+      "reason": "StorageProvider and deletion-ledger primitive task"
+    },
+    {
+      "id": "provider-contract-tests",
+      "state": "pending",
+      "source": "FB 14 row Arch 31",
+      "prerequisites": ["fb20-task-8", "fb20-task-9"],
+      "reason": "ports and secret-store access path not delivered"
+    },
+    {
+      "id": "processed-event-convention",
+      "state": "pending",
+      "source": "FB 16 row 11; DM 20, 34",
+      "prerequisites": ["fb20-task-6"],
+      "reason": "event envelope and processed-event convention task"
+    },
+    {
+      "id": "idempotency-key-convention",
+      "state": "pending",
+      "source": "FB 14 row W1 AC 30",
+      "prerequisites": ["fb20-no-assigned-task-owner"],
+      "reason": "the approved Foundation sequence assigns no task owner to this row; none is assumed (the convention, the store and AC 30 are unimplemented)"
+    },
+    {
+      "id": "architecture-module-boundary-tests",
+      "state": "pending",
+      "source": "FB 14 row AGENTS 7 / ADR-013 / Arch 5 / X15 / Rem R4; STACK-ADR-001 4.8 layers 1-5, 7",
+      "prerequisites": ["fb20-task-11"],
+      "reason": "needs the module layout; Task 2 only runs layout-independent dependency rules (architecture gate)"
+    },
+    {
+      "id": "vulnerability-findings-policy",
+      "state": "pending",
+      "source": "STACK-ADR-001 4.13; STACK-ADR-002 section 8 (dependency and image vulnerability scan)",
+      "prerequisites": ["decision-vulnerability-findings-policy"],
+      "reason": "the dependency-scan and image-scan jobs execute and report findings, but no policy decides which findings fail; a green scan job does not mean no unacceptable vulnerability exists"
+    }
+  ]
+}
