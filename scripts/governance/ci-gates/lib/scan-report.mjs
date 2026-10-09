@@ -5,7 +5,7 @@
 //   - a readable result with findings is reported in full, whatever the severity, and never causes a failure by itself.
 // A green scan job means "the required scan executed successfully and its findings were reported", not "no unacceptable
 // vulnerability exists".
-import { parseAudit } from './dependency-report.mjs';
+import { parseAudit } from './audit-parse.mjs';
 
 export const POLICY_NOTE =
   'The scan executed successfully and its findings are reported above. This is not a statement that no unacceptable ' +

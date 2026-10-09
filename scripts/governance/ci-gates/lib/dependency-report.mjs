@@ -4,7 +4,7 @@
 // relevant vulnerability information where applicable. It proposes; it never changes a file and never opens a pull request.
 import { parse } from 'yaml';
 
-const SEVERITY_ORDER = ['critical', 'high', 'moderate', 'low', 'info'];
+export { parseAudit } from './audit-parse.mjs';
 
 /** Pins found in repository files: tools, runtime, package manager and container images. */
 export function collectPins({ nodeVersionFile, packageJson, workflows, dockerfileText }) {
@@ -48,22 +48,6 @@ export function collectPins({ nodeVersionFile, packageJson, workflows, dockerfil
     if (m) pins.push({ name: m[1], kind: 'container-image', current: `${m[2]}@${m[3]}`, tag: m[2], digest: m[3], source: 'Dockerfile' });
   }
   return pins;
-}
-
-/** pnpm audit --json -> [{package, severity, title, vulnerable, patched, url}] sorted by severity. Unparseable input throws. */
-export function parseAudit(json) {
-  const data = typeof json === 'string' ? JSON.parse(json) : json;
-  if (!data || typeof data !== 'object' || typeof data.advisories !== 'object') throw new Error('unparseable audit report');
-  const rows = Object.values(data.advisories).map((a) => ({
-    package: String(a.module_name ?? a.name ?? 'unknown'),
-    severity: String(a.severity ?? 'unknown'),
-    title: String(a.title ?? ''),
-    vulnerable: String(a.vulnerable_versions ?? ''),
-    patched: String(a.patched_versions ?? ''),
-    url: String(a.url ?? ''),
-  }));
-  rows.sort((x, y) => SEVERITY_ORDER.indexOf(x.severity) - SEVERITY_ORDER.indexOf(y.severity));
-  return rows;
 }
 
 /** pnpm outdated --format json -> [{package, current, wanted, latest}]. Empty output means nothing is outdated. */
